@@ -1,4 +1,4 @@
-Golden set: `eval/golden/acme_demo.jsonl` (31 items x 1 rep). Generated 2026-11-22 12:06.
+Golden set: `eval/golden/acme_demo.jsonl` (31 items x 1 rep). Generated 2026-11-22 12:25.
 
 | Experiment | Chunking | Retrieval | LLM | Recall@1 | Recall@5 | MRR | Refusal acc. | Unsafe ans. | Faithful. | Correct. | p50 ms | $/q |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|

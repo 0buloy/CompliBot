@@ -89,7 +89,9 @@ class HybridRetriever:
             raise ValueError("Dense search requested but the index has no embeddings; re-run ingest with an embedder.")
         built_with = index.meta.get("embedder")
         if embedder is not None and built_with and built_with != embedder.name:
-            raise ValueError(f"Index embeddings were built with {built_with!r}, but query embedder is {embedder.name!r}.")
+            raise ValueError(
+                f"Index embeddings were built with {built_with!r}, but query embedder is {embedder.name!r}."
+            )
         self.bm25 = LuceneBM25([tokenize(index_text(c)) for c in self.chunks]) if self.chunks else None
         self._levels = np.array([c.access_level for c in self.chunks])
         self._doc_ids = np.array([c.doc_id for c in self.chunks])

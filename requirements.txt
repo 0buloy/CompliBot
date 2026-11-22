@@ -19,9 +19,13 @@ langfuse>=3.0
 # spaCy model for Presidio:  python -m spacy download en_core_web_sm
 # (without it, PII redaction falls back to the built-in regex recognizers)
 
+# UI
+streamlit>=1.35
+
 # Optional: neural reranker (COMPLIBOT_RERANKER=cross-encoder)
 # sentence-transformers>=3.0
 
 # Dev
 pytest>=8
 httpx>=0.27
+ruff>=0.6

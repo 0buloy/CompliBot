@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      live_eval:
+        description: "Also run the paid eval with real models (needs ANTHROPIC_API_KEY secret)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          pip install -r requirements.txt ruff
+          pip install -e .
+          python -m spacy download en_core_web_sm
+      - name: Lint
+        run: ruff check src tests ui
+      - name: Tests
+        run: pytest -q
+
+  eval:
+    # Offline eval on every push: fake LLM + heuristic judge, so it costs nothing and is deterministic.
+    # It gates regressions in retrieval, refusal and citation logic, and checks the harness itself.
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -r requirements.txt && pip install -e .
+      - name: Build index
+        run: complibot ingest
+      - name: Harness sanity (oracle must be perfect, null must fail)
+        run: |
+          complibot eval --system oracle --no-judge --min recall@5=1.0 --min refusal_accuracy=1.0
+          complibot eval --system null --no-judge --label null | tee null.txt
+          grep -E "false refusal rate.*1\.000" null.txt
+      - name: Golden-set eval (regression gate)
+        run: |
+          complibot eval --label ci \
+            --min recall@5=0.95 --min mrr=0.85 --min refusal_accuracy=0.55 --min supported_rate=0.95 \
+            | tee eval.txt
+      - name: A/B experiments (offline)
+        run: complibot experiment --config eval/experiments/offline.json
+      - name: Job summary
+        if: always()
+        run: |
+          echo '## Golden-set eval' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"; cat eval.txt >> "$GITHUB_STEP_SUMMARY" || true; echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Experiments' >> "$GITHUB_STEP_SUMMARY"
+          cat eval/results/experiments/offline/comparison.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: eval/results/
+
+  live-eval:
+    # Real models cost money, so this only runs when started by hand with live_eval=true.
+    if: github.event_name == 'workflow_dispatch' && inputs.live_eval
+    needs: eval
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      COMPLIBOT_LLM_PROVIDER: anthropic
+      COMPLIBOT_JUDGE_PROVIDER: anthropic
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt && pip install -e .
+      - run: complibot ingest
+      - run: complibot eval --label live --min refusal_accuracy=0.8 | tee live.txt
+      - run: cat live.txt >> "$GITHUB_STEP_SUMMARY"
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t complibot:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name cb -p 8000:8000 complibot:ci
+          for i in $(seq 1 30); do curl -sf localhost:8000/health && break; sleep 2; done
+          curl -sf -X POST localhost:8000/ask -H 'Content-Type: application/json' \
+               -d '{"question": "Who must approve AI content sent to customers?"}' | tee ask.json
+          grep -q '"status":"refused"' ask.json   # public caller can't see the internal policy
+          docker logs cb

@@ -25,7 +25,7 @@ from pathlib import Path
 from .answer import CompliBot
 from .config import Settings
 from .embeddings import get_embedder
-from .evaluation import load_golden, run_eval, save_run, summarize, format_table
+from .evaluation import format_table, load_golden, run_eval, save_run, summarize
 from .ingest import build_index
 from .judge import get_judge
 
@@ -71,7 +71,9 @@ def describe(s: Settings, llm_name: str) -> dict:
     return {"chunking": s.chunking, "retrieval": retrieval, "llm": llm_name}
 
 
-def run_experiments(config: dict, out_root: Path, base_settings: Settings | None = None, progress: bool = False) -> dict:
+def run_experiments(
+    config: dict, out_root: Path, base_settings: Settings | None = None, progress: bool = False
+) -> dict:
     base = apply_changes(base_settings or Settings.from_env(), config.get("baseline", {}))
     items = load_golden(Path(config["golden"]))
     reps = int(config.get("reps", 1))

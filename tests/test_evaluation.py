@@ -96,7 +96,8 @@ def test_judge_fails_known_negatives():
     assert judge.faithfulness("q", "", src).score == 0.0
     assert judge.faithfulness("q", "The fine is $1 million per breach.", src).score == 0.0
     assert judge.faithfulness("q", "Stop using the data within 10 business days [S1].", []).score == 0.0
-    assert judge.correctness("q", "I don't know based on the provided documents.", "Within 10 business days.").score == 0.0
+    idk = "I don't know based on the provided documents."
+    assert judge.correctness("q", idk, "Within 10 business days.").score == 0.0
     assert judge.correctness("q", "", "Within 10 business days.").score == 0.0
 
 

@@ -1,6 +1,6 @@
-from complibot.cli import main
-
 from conftest import FIXTURE_DATA
+
+from complibot.cli import main
 
 
 def test_cli_ingest_and_ask(tmp_path, capsys, monkeypatch):

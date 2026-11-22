@@ -22,8 +22,8 @@ import json
 import random
 import re
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from .llm import FakeProvider, LLMError, LLMProvider, parse_json_object
 from .retrieve import HybridRetriever

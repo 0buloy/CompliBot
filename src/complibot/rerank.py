@@ -28,7 +28,7 @@ class Reranker(Protocol):
 
 
 def _bigrams(tokens: list[str]) -> set[tuple[str, str]]:
-    return set(zip(tokens, tokens[1:]))
+    return set(zip(tokens, tokens[1:], strict=False))
 
 
 class LexicalReranker:

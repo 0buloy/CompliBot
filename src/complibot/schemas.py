@@ -29,7 +29,7 @@ class Chunk:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Chunk":
+    def from_dict(cls, d: dict) -> Chunk:
         return cls(**d)
 
     @property

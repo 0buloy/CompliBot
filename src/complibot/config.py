@@ -87,7 +87,7 @@ class Settings:
     internal_api_keys: frozenset[str] = field(default_factory=frozenset)
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         keys = frozenset(k.strip() for k in _env("COMPLIBOT_INTERNAL_API_KEYS").split(",") if k.strip())
         return cls(
             data_dir=Path(_env("COMPLIBOT_DATA_DIR", "data/raw")),
@@ -118,7 +118,7 @@ class Settings:
             internal_api_keys=keys,
         )
 
-    def with_(self, **changes) -> "Settings":
+    def with_(self, **changes) -> Settings:
         """Return a copy with some fields changed (handy in tests and experiments)."""
         return replace(self, **changes)
 

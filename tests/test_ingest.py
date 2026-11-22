@@ -84,7 +84,8 @@ def test_pdf_ingestion(tmp_path):
         data / "internal" / "fake-trm.pdf",
         [
             [header, "4 TECHNOLOGY RISK FRAMEWORK", "4.1 Risk Management Framework",
-             "4.1.1 The FI should establish a framework to manage", "technology risk across the organisation.", "Page 1"],
+             "4.1.1 The FI should establish a framework to manage",
+             "technology risk across the organisation.", "Page 1"],
             [header, "4.1.2 The framework should be reviewed annually.", "Page 2"],
             [header, "4.1.3 Senior management should approve the framework.", "Page 3"],
         ],

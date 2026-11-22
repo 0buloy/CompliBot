@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from complibot.agent import Agent, ToolBox, TOOLS
+from complibot.agent import TOOLS, Agent, ToolBox
 from complibot.answer import CompliBot
 from complibot.guardrails import Guardrails, RegexRedactor
 from complibot.llm import FakeProvider, LLMError, ToolCall

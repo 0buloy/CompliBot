@@ -60,7 +60,7 @@ def nric_checksum_ok(value: str) -> bool:
     prefix, digits, check = v[0], v[1:8], v[8]
     if prefix == "M":
         return True
-    total = sum(int(d) * w for d, w in zip(digits, (2, 7, 6, 5, 4, 3, 2)))
+    total = sum(int(d) * w for d, w in zip(digits, (2, 7, 6, 5, 4, 3, 2), strict=True))
     if prefix in "TG":
         total += 4
     table = "JZIHGFEDCBA" if prefix in "ST" else "XWUTRQPNMLK"
@@ -244,7 +244,7 @@ class Guardrails:
         return self.redactor.redact(text).text
 
     @classmethod
-    def from_settings(cls, settings) -> "Guardrails":
+    def from_settings(cls, settings) -> Guardrails:
         if settings.pii_engine == "off":
             return cls(redactor=None, block_injection=settings.block_injection)
         entities = DEFAULT_ENTITIES + (("PERSON",) if settings.pii_person else ())

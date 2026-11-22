@@ -19,8 +19,9 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Protocol
 
 from .config import Settings
 
@@ -262,7 +263,9 @@ class AnthropicProvider:
                 calls.append(ToolCall(id=b.id, name=b.name, args=args))
         return ChatResponse(
             text="".join(b.text for b in resp.content if b.type == "text"), tool_calls=calls, raw=resp.content,
-            model=resp.model or self.model, input_tokens=resp.usage.input_tokens, output_tokens=resp.usage.output_tokens,
+            model=resp.model or self.model,
+            input_tokens=resp.usage.input_tokens,
+            output_tokens=resp.usage.output_tokens,
             latency_ms=(time.perf_counter() - t0) * 1000, stop_reason=resp.stop_reason or "",
         )
 

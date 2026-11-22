@@ -403,7 +403,9 @@ def ingest_file(
 
 def discover_files(data_dir: Path) -> list[Path]:
     return sorted(
-        p for p in data_dir.rglob("*") if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES and p.name != "README.md"
+        p
+        for p in data_dir.rglob("*")
+        if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES and p.name != "README.md"
     )
 
 

@@ -219,7 +219,7 @@ class CompliBot:
         self.tracer = tracer or Tracer(None)
 
     @classmethod
-    def from_settings(cls, settings: Settings, llm: LLMProvider | None = None) -> "CompliBot":
+    def from_settings(cls, settings: Settings, llm: LLMProvider | None = None) -> CompliBot:
         from .embeddings import get_embedder
         from .llm import get_provider
         from .rerank import get_reranker

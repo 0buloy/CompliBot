@@ -24,11 +24,11 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Any, TypedDict
+from typing import TypedDict
 
 from pydantic import BaseModel, Field
 
-from .answer import IDK, BLOCKED_MESSAGE, _to_citation, write_audit
+from .answer import BLOCKED_MESSAGE, IDK, _to_citation, write_audit
 from .config import Settings
 from .guardrails import Guardrails
 from .llm import ChatResponse, FakeProvider, LLMError, LLMProvider, ToolCall, parse_json_object
@@ -214,7 +214,8 @@ class ToolBox:
         blocks = "\n".join(f'<clause ref="{c["ref"]}" doc="{c["doc_title"]}" section="{c["section"]}">\n'
                            f'{c["text"]}\n</clause>' for c in clauses)
         try:
-            resp = self.llm.complete(CHECKLIST_SYSTEM, f"<topic>{topic}</topic>\n{blocks}", json_schema=CHECKLIST_SCHEMA)
+            user = f"<topic>{topic}</topic>\n{blocks}"
+            resp = self.llm.complete(CHECKLIST_SYSTEM, user, json_schema=CHECKLIST_SCHEMA)
             self.usage.append(resp)
             raw_items = parse_json_object(resp.text).get("items", [])
         except (LLMError, ValueError) as e:
@@ -237,8 +238,9 @@ class ToolBox:
 
     def run(self, call: ToolCall) -> tuple[str, bool]:
         """Execute one tool call -> (JSON string content, is_error)."""
-        fn = {"list_documents": self.list_documents, "search_clauses": self.search_clauses,
-              "compare_regulations": self.compare_regulations, "generate_checklist": self.generate_checklist}.get(call.name)
+        registry = {"list_documents": self.list_documents, "search_clauses": self.search_clauses,
+                    "compare_regulations": self.compare_regulations, "generate_checklist": self.generate_checklist}
+        fn = registry.get(call.name)
         try:
             if fn is None:
                 raise ToolError(f"Unknown tool {call.name!r}")
@@ -327,7 +329,7 @@ class Agent:
             self.checklist_llm = FakeProvider(responder=fake_checklist_responder)
 
     @classmethod
-    def from_bot(cls, bot, runner: str = "auto") -> "Agent":
+    def from_bot(cls, bot, runner: str = "auto") -> Agent:
         return cls(bot.settings, bot.retriever, bot.llm, bot.guardrails, bot.tracer, runner=runner)
 
     # ---- nodes (shared by the LangGraph runner and the plain loop)
@@ -536,6 +538,7 @@ def fake_checklist_responder(system: str, user: str, schema: dict | None) -> str
             low = sent.lower()
             if " must " in f" {low} " or " should " in f" {low} ":
                 sent = re.sub(r"^\d+(\.\d+)*\s+", "", sent)
-                items.append({"requirement": sent, "ref": ref, "priority": "high" if " must " in f" {low} " else "medium"})
+                priority = "high" if " must " in f" {low} " else "medium"
+                items.append({"requirement": sent, "ref": ref, "priority": priority})
                 break
     return json.dumps({"items": items})

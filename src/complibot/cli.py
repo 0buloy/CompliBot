@@ -109,7 +109,8 @@ def cmd_agent(args) -> int:
         print(result.model_dump_json(indent=2))
         return 0
     for i, step in enumerate(result.steps, start=1):
-        print(f"  step {i}: {step.tool}({json.dumps(step.args)[:80]}) -> {'ok' if step.ok else 'ERROR'}: {step.summary[:90]}")
+        outcome = "ok" if step.ok else "ERROR"
+        print(f"  step {i}: {step.tool}({json.dumps(step.args)[:80]}) -> {outcome}: {step.summary[:90]}")
     print(f"\n{result.answer}\n")
     if result.checklist:
         print(json.dumps(result.checklist, indent=2))
@@ -188,7 +189,7 @@ def cmd_eval_generate(args) -> int:
 
 def cmd_eval_label(args) -> int:
     from .answer import CompliBot
-    from .labeling import HELP, append_jsonl, read_jsonl, label_items
+    from .labeling import HELP, append_jsonl, label_items, read_jsonl
 
     bot = CompliBot.from_settings(_settings(args))
     items = read_jsonl(Path(args.file))

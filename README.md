@@ -1,129 +1,121 @@
 # CompliBot
 
-An **evaluated** RAG assistant that answers compliance questions over Singapore regulatory
-documents (MAS Technology Risk Management Guidelines, PDPC PDPA advisory guidelines, IMDA Model AI
-Governance Framework), with clause-level citations on every answer and an "I don't know" when the
-documents don't support one.
+**An evaluated RAG + agent assistant for Singapore regulatory compliance.** It answers questions over
+the MAS Technology Risk Management Guidelines, PDPC PDPA advisory guidelines and the IMDA Model AI
+Governance Framework, with a **clause-level citation on every answer**, and says **"I don't know"**
+when the documents don't support one.
 
-> Status: Phases 1-4 are done (core RAG, evaluation, experiments, agent and guardrails). Deployment is next.
+[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+· Python 3.11+ · FastAPI · Claude API · LangGraph · Presidio · Langfuse · Docker · Cloud Run
 
-## What it does
+| What job postings ask for | Where it is in this repo |
+|---|---|
+| RAG and agentic workflows (tool calling) | hybrid retrieval + cited answers (`retrieve.py`, `answer.py`); LangGraph tool-calling agent with search / compare / checklist-JSON tools (`agent.py`) |
+| Evaluation | recall@k, MRR, refusal accuracy, citation precision, LLM-as-judge faithfulness with judge calibration, latency, cost (`evaluation.py`, `judge.py`); A/B experiments with paired CIs (`experiments.py`) |
+| Security and guardrails | permission-aware retrieval, server-side role binding, Presidio PII redaction with Singapore NRIC/phone recognizers, prompt-injection screen, failure handling (`guardrails.py`) |
+| Singapore AI governance | AI Verify principles and Model AI Governance Framework self-assessment: [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md) |
+| Production | FastAPI, Docker, GitHub Actions (tests + eval gate + image smoke test), Cloud Run guide, Langfuse tracing, Streamlit UI |
 
-- **Clause-aware ingestion.** PDFs are split on numbered headings/clauses (`4.2.1 ...`). Every chunk
-  keeps doc title, clause ID, heading title, page range and access level.
-- **Hybrid retrieval.** BM25 (`rank_bm25`) plus optional dense embeddings (numpy), merged with
-  reciprocal rank fusion. With dense search off, it runs fully offline on BM25 alone.
-- **Permission-aware retrieval.** `data/raw/public` vs `data/raw/internal` decides a document's
-  access level. The role filter runs *before* ranking, so internal text never reaches a public
-  user's prompt. The API works out the role from the `X-API-Key` header, never from the request body.
-- **Grounded answers.** The LLM must return `{answer, citations, refused}` JSON. The code checks that
-  every citation is a source that was actually retrieved; anything else marks the answer
-  `unsupported`.
-- **Pluggable LLMs.** Anthropic (Claude), OpenAI, or a deterministic `fake` provider, so tests and
-  CI need no API keys. Model names come from environment variables.
+## Architecture
 
-## Quickstart
+```mermaid
+flowchart LR
+    U[User / Streamlit UI] -->|question + X-API-Key| API[FastAPI<br/>/ask · /agent · /search]
+    API --> G1[Input guardrails<br/>Presidio PII redaction<br/>injection screen]
+    G1 -->|redacted text only| R
+    subgraph R[Retrieval, role-filtered before ranking]
+        QR[query rewriting<br/>rules / LLM] --> BM[BM25<br/>Lucene IDF]
+        QR --> DE[dense<br/>numpy cosine]
+        BM --> RRF[reciprocal<br/>rank fusion]
+        DE --> RRF
+        RRF --> RR[reranker<br/>cross-encoder / LLM]
+    end
+    IDX[(Clause index<br/>chunks.jsonl + embeddings.npy)] --> R
+    PDF[PDFs in data/raw/public · internal] -->|clause-aware chunking| IDX
+    R --> LLM[LLM: Claude / OpenAI / fake<br/>JSON answer + citations]
+    R <-->|tools| AG[LangGraph agent<br/>search · compare · checklist]
+    AG --> LLM
+    LLM --> V[Citation check<br/>cited ids ⊆ retrieved]
+    V --> G2[Output redaction]
+    G2 --> API
+    API -.-> OBS[Audit log JSONL · Langfuse traces<br/>no raw PII]
+```
+
+## Quickstart (offline, no API keys)
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt && pip install -e .
-cp .env.example .env            # defaults: fake LLM, BM25 only, no keys needed
+python -m spacy download en_core_web_sm   # optional: without it, PII redaction uses regex
+cp .env.example .env                      # defaults: fake LLM, BM25 only
 
-complibot ingest                # builds data/index from data/raw
+complibot ingest
 complibot ask "Can I paste a customer's NRIC into an AI tool?" --role internal
-complibot ask "Can I paste a customer's NRIC into an AI tool?" --role public   # -> I don't know
-complibot eval                  # golden-set eval: recall@k, refusal, faithfulness, cost
-pytest                          # offline test suite
+complibot ask "Can I paste a customer's NRIC into an AI tool?" --role public   # refused: internal doc
+complibot agent "Make a checklist for AI incident reporting and customer data" --role internal
+complibot eval            # golden-set eval table
+pytest                    # 109 tests, offline
+streamlit run ui/app.py   # demo UI
 ```
 
-The repo ships one **fictional** internal policy, so the commands above work right away. To use the
-real regulations, download the PDFs listed in [`data/raw/README.md`](data/raw/README.md), re-run
-`complibot ingest`, and use `complibot inspect <file>` to check clause detection.
+The repo ships one **fictional** internal policy so this all works out of the box. For the real
+corpus, download the PDFs listed in [`data/raw/README.md`](data/raw/README.md), re-run
+`complibot ingest`, and check clause detection with `complibot inspect <pdf>`.
 
-### Use a real LLM
+**Real LLM:** set `COMPLIBOT_LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`
+(default `claude-opus-5-5`) in `.env`. `openai` works the same way with `OPENAI_MODEL`.
 
-```bash
-# in .env
-COMPLIBOT_LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-opus-5-5      # or any Claude model ID you prefer
-```
+## How an answer is produced
 
-### API
+1. **Guardrails.** NRIC/FIN (checksum-validated), +65 phone numbers, emails and card numbers are
+   replaced with placeholders (`<NRIC_1>`). Prompt-injection attempts are blocked. Only the redacted
+   text flows onward to the LLM, logs and traces.
+2. **Retrieve.** Chunks the caller's role may not see are masked out *before* ranking. Then BM25
+   (+ dense) for the query (+ rewrites), fused with RRF, optionally reranked, top-k kept.
+3. **No hits → refuse** without spending LLM tokens.
+4. **Generate.** The LLM gets the clauses as `<source id="S1" doc=… section=… pages=…>` blocks and
+   must return JSON `{answer, citations, refused}` (structured outputs).
+5. **Verify.** Every cited `S#` (in the list *or* inline) must be a retrieved clause. Otherwise the
+   status is `unsupported`. Statuses: `answered` · `refused` · `unsupported` · `blocked` · `error`.
+6. **Degrade gracefully.** If the LLM is down, return the top relevant clauses, not a 500.
 
-```bash
-complibot serve --port 8000          # or: uvicorn complibot.api:app
-curl -s localhost:8000/ask -H 'Content-Type: application/json' \
-     -H 'X-API-Key: change-me-internal-key' \
-     -d '{"question": "Who must approve AI-generated content sent to customers?"}'
-```
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /health` | liveness, chunk count, active LLM |
-| `POST /ask` | `{question, top_k?}` → answer, status (`answered`/`refused`/`unsupported`/`error`), citations, usage, latency |
-| `POST /search` | retrieval only, no LLM call (debugging) |
-
-Interactive docs: `http://localhost:8000/docs`.
-
-## Agent
-
-`POST /agent` (or `complibot agent "..."`) runs a tool-calling agent built as a LangGraph state graph
-(`agent -> tools -> agent ... -> end`), with a plain-loop fallback that uses the same node functions:
-
-| Tool | What it does |
-|---|---|
-| `list_documents` | documents the caller's role may see |
-| `search_clauses(query, doc_ids, top_k)` | role-filtered hybrid search, optionally within documents |
-| `compare_regulations(topic, doc_a, doc_b)` | top clauses on one topic from each of two documents |
-| `generate_checklist(topic, doc_ids)` | structured JSON checklist; items that don't cite a retrieved clause are dropped |
-
-```bash
-complibot agent "Give me a checklist for AI incident reporting and customer data" --role internal
-```
-
-The role is bound server-side when the toolbox is created. The model never passes it and can't widen
-its access: an internal doc_id gives a public caller the same "unknown document" error as a document
-that doesn't exist. Tool errors go back to the model as `is_error` results, and a step limit bounds
-cost.
-
-## Guardrails and reliability
-
-- **PII redaction before the LLM** (`guardrails.py`): Presidio AnalyzerEngine plus custom Singapore
-  recognizers. NRIC/FIN is checked with the check-letter checksum, and +65 phone numbers, emails
-  and cards are covered too. Placeholders are consistent (`<NRIC_1>` every time the same NRIC
-  appears). If Presidio or its spaCy model is missing, it falls back to regex rather than turning
-  off. Answers are redacted on the way out too.
-- **Prompt-injection screen**: blocks "ignore previous instructions" / "reveal system prompt" style
-  inputs before any LLM call (status `blocked`).
-- **Access control**: role from `X-API-Key` (constant-time comparison), filter applied before
-  ranking, the same filter inside every agent tool.
-- **Failure handling**: SDK retries with exponential backoff plus timeouts (no double retry layer).
-  If the LLM is down, `/ask` returns status `error` with the top 3 relevant clauses rather than a
-  500. Malformed model JSON → `error`. Unhandled exceptions → a clean 500 with an `X-Request-ID`
-  and no stack trace.
-- **Audit log** (`COMPLIBOT_AUDIT_LOG`): JSONL of role, status, documents touched, citations and PII
-  counts. It never contains question or answer text.
-- **Tracing** (`tracing.py`): set `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` to get one trace per request
-  (input guardrail, retrieval, LLM generations with token usage and cost, each agent tool call). Only
-  redacted text is traced, and the PII redactor is also installed as Langfuse's `mask`.
+The agent (`POST /agent`) wraps the same retriever in tools, under a LangGraph `agent ⇄ tools` loop:
+`list_documents`, `search_clauses`, `compare_regulations` and `generate_checklist`. The checklist
+returns structured JSON, and items not citing a retrieved clause are dropped. The role is bound
+server-side, so the model can't pass or widen it, and an internal doc_id looks exactly like a
+non-existent one to a public caller.
 
 ## Evaluation
 
-`complibot eval` scores the golden set on recall@k, MRR, refusal accuracy, unsafe answer rate,
-citation validity and precision, LLM-judge faithfulness and correctness, latency and cost. It
-also has oracle and null sanity baselines. See [`eval/README.md`](eval/README.md) for the
-metric definitions and the method for growing the golden set to 100+ items.
+`complibot eval` scores a golden set (role-aware, clause-level gold labels, unanswerable and
+role-gated items) and saves per-case rows and a summary:
+
+| Group | Metrics |
+|---|---|
+| Retrieval | recall@1/3/5/10, MRR |
+| Refusal | refusal accuracy, false-refusal rate, **unsafe-answer rate** |
+| Grounding | supported rate, citation precision, **faithfulness** (LLM judge, per claim) |
+| Answer | correctness vs reference (LLM judge) |
+| Ops | latency p50/p95, tokens, cost per question (judge cost separate) |
+
+Every mean has a ±95% CI. Infrastructure errors are kept out of the quality metrics. Oracle and null
+systems check the harness itself, and `eval-calibrate` measures judge-vs-human agreement. How to grow
+the golden set to 100+ items with `eval-generate` + `eval-label`: [`eval/README.md`](eval/README.md).
 
 ## Experiments
 
-`complibot experiment --config eval/experiments/offline.json --update-readme` runs every
-configuration on the same golden set and rewrites the table below. `eval/experiments/full.json` is the
-version with real models (Claude Opus 5.5 vs Claude Haiku 5.5, a cross-encoder reranker, LLM query
-rewriting, OpenAI embeddings).
+`complibot experiment --config eval/experiments/offline.json --update-readme` regenerates the table
+below. Each row is the baseline with one change, compared **question by question** against the
+baseline (`*` = 95% CI excludes 0). `eval/experiments/full.json` runs the same comparison with real
+models: Claude Opus 5.5 vs Claude Haiku 5.5, a cross-encoder reranker, LLM query rewriting and OpenAI
+embeddings.
+
+> The table below comes from the **offline** config: fake LLM, heuristic judge, a 13-clause fictional
+> corpus. It shows the pipeline working, not real-world quality. Replace it with your `full.json`
+> run on the real documents.
 
 <!-- experiments:start -->
-Golden set: `eval/golden/acme_demo.jsonl` (31 items x 1 rep). Generated 2026-11-22 12:06.
+Golden set: `eval/golden/acme_demo.jsonl` (31 items x 1 rep). Generated 2026-11-22 12:25.
 
 | Experiment | Chunking | Retrieval | LLM | Recall@1 | Recall@5 | MRR | Refusal acc. | Unsafe ans. | Faithful. | Correct. | p50 ms | $/q |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -145,42 +137,67 @@ Paired difference vs baseline (same questions; ±95% CI; * = CI excludes 0):
 | Rewriting + reranker | +0.04 ±0.14 | +0.03 ±0.08 | +0.00 | +0.00 |
 <!-- experiments:end -->
 
-## Layout
+What the offline run already shows: fixed-size windows retrieve about as well as clause chunks but
+cut clauses mid-sentence, which hurts correctness. A non-semantic "dense" retriever adds noise to the
+fusion. A lexical reranker using the same signal as BM25 adds nothing.
+
+## Guardrails, security and reliability
+
+- **Access control:** folder → access level at ingest (unknown folder → internal, fail closed). Role
+  from `X-API-Key` (constant-time compare), filter applied before ranking and inside every agent tool.
+- **PII:** Presidio + custom Singapore recognizers; regex fallback if Presidio is missing (never
+  silently off); output redaction; Presidio's email recognizer pinned offline; the redactor is also
+  Langfuse's `mask`.
+- **Failure handling:** SDK retries with backoff and timeouts (one retry layer, not two); degraded
+  mode; malformed JSON → `error`; agent step limit; tool errors returned to the model; clean 500s
+  with `X-Request-ID`.
+- **Audit:** `COMPLIBOT_AUDIT_LOG` writes JSONL of role, status, documents, citations and PII
+  counts, never question or answer text.
+- **Tracing:** set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` to get one trace per request
+  (guardrail → retrieval → LLM generations with tokens and cost → each tool call).
+
+## Deploy
+
+`docker build -t complibot . && docker run -p 8000:8000 --env-file .env complibot`. The image runs as
+non-root, honours `$PORT`, has a health check, and builds the index at image build time. Step-by-step
+for **Google Cloud Run in `asia-southeast1`** (scale to zero, Secret Manager, budget caps), Render and
+Streamlit Community Cloud: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
+CI (`.github/workflows/ci.yml`) runs on every push: lint, tests on Python 3.11 and 3.12, the offline
+eval as a regression gate (plus the oracle/null harness checks), the A/B experiments, and a Docker
+build with smoke test. A paid live-model eval runs only when started manually.
+
+## Repository layout
 
 ```
 src/complibot/
-  config.py      settings from env; role -> allowed access levels
-  ingest.py      PDF/TXT/MD -> cleaned lines -> clause segments -> chunks (section | fixed)
-  store.py       chunks.jsonl + embeddings.npy + meta.json
-  embeddings.py  none | hash (offline, for tests) | openai
-  retrieve.py    BM25 + dense + reciprocal rank fusion, role filter before ranking
-  llm.py         anthropic | openai | fake providers, JSON parsing, cost table
-  answer.py      prompt, citation validation, refusal logic, CompliBot facade
-  api.py         FastAPI app (role from X-API-Key)
-  judge.py       LLM-as-judge: faithfulness (per-claim) and correctness, offline heuristic judge
-  evaluation.py  golden set, per-case scoring, summary with 95% CIs, oracle/null baselines
-  labeling.py    candidate generation + interactive labelling for the golden set
-  rewrite.py     query rewriting (rules glossary | LLM), multi-query RRF
-  rerank.py      rerankers (lexical | cross-encoder | LLM)
-  experiments.py A/B runner with paired deltas and README table
-  agent.py       LangGraph tool-calling agent: search, compare, checklist JSON
-  guardrails.py  Presidio PII redaction (SG NRIC/phone), injection screen
-  tracing.py     optional Langfuse tracing with PII masking
-  cli.py         ingest | inspect | search | ask | agent | serve | eval | experiment | eval-*
-tests/           pytest; fixture documents are clearly marked FAKE
-eval/            golden sets, judge calibration set, results
-data/raw/        public/ and internal/ (folder = access level)
-data/index/      built index (git-ignored)
+  config.py       settings from env; role -> allowed access levels
+  ingest.py       PDF/TXT/MD -> clean lines -> clause segments -> chunks (section | fixed)
+  store.py        chunks.jsonl + embeddings.npy + meta.json
+  embeddings.py   none | hash (offline) | openai
+  retrieve.py     BM25 (Lucene IDF) + dense + RRF; role and document filters before ranking
+  rewrite.py      query rewriting (rules glossary | LLM), multi-query fusion
+  rerank.py       rerankers (lexical | cross-encoder | LLM)
+  llm.py          anthropic | openai | fake; JSON completion + tool-calling chat; cost table
+  answer.py       prompt, citation validation, refusal, degradation, audit; CompliBot facade
+  agent.py        LangGraph agent and tools (search, compare, checklist JSON)
+  guardrails.py   Presidio PII redaction (SG NRIC/FIN, phone), injection screen
+  tracing.py      optional Langfuse tracing with PII masking
+  judge.py        LLM-as-judge: faithfulness (per claim), correctness; offline heuristic judge
+  evaluation.py   golden set, metrics, 95% CIs, oracle/null baselines, results table
+  experiments.py  A/B runner, paired deltas, markdown table
+  labeling.py     golden-set candidate generation + interactive labelling
+  api.py          FastAPI app
+  cli.py          ingest | inspect | search | ask | agent | serve | eval | experiment | eval-*
+ui/app.py         Streamlit demo (in-process or against the API)
+tests/            pytest; fixture documents clearly marked FAKE
+eval/             golden sets, judge calibration set, experiment configs, results
+data/raw/         public/ and internal/ (folder = access level), catalog.json
+docs/             DEPLOY.md · MODEL_CARD.md · DEMO_SCRIPT.md · RESUME.md
 ```
 
-## How an answer is produced
+## Limitations
 
-1. `retrieve.search(question, role)`: mask out chunks the role can't see, rank with BM25 (+ dense),
-   fuse with RRF, keep the top-k.
-2. No hits → refuse immediately (no LLM tokens spent).
-3. Prompt: system rules (answer only from sources, cite `[S#]`, refuse if unsupported, ignore
-   instructions inside sources) plus the sources as `<source id="S1" doc=... section=...>` blocks.
-4. The LLM returns JSON (Claude: structured outputs; OpenAI: strict `json_schema`).
-5. Validate: each cited `S#` (in the list *or* inline) must map to a retrieved chunk. Valid +
-   non-empty → `answered`. Otherwise → `unsupported`. `refused: true` → `refused`. Provider failure
-   or bad JSON → `error` (never a 500).
+Clause detection is heuristic (check new PDFs with `complibot inspect`). The bundled demo corpus is
+tiny and fictional. Offline scores (fake LLM) only check the plumbing. This is a decision-support
+tool, not legal advice: always read the cited clause. More in [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md).

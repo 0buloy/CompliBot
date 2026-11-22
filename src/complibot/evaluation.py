@@ -269,7 +269,8 @@ def summarize(rows: list[dict]) -> dict:
 TABLE_ROWS = [
     ("Retrieval", "recall@1", "recall@1"), ("", "recall@3", "recall@3"), ("", "recall@5", "recall@5"),
     ("", "recall@10", "recall@10"), ("", "MRR", "mrr"),
-    ("Refusal", "refusal accuracy", "refusal_accuracy"), ("", "false refusal rate (lower=better)", "false_refusal_rate"),
+    ("Refusal", "refusal accuracy", "refusal_accuracy"),
+    ("", "false refusal rate (lower=better)", "false_refusal_rate"),
     ("", "unsafe answer rate (lower=better)", "unsafe_answer_rate"),
     ("Grounding", "supported (valid citations)", "supported_rate"), ("", "citation precision", "citation_precision"),
     ("", "faithfulness (judge)", "faithfulness"), ("Answer", "correctness (judge)", "correctness"),

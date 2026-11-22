@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from complibot.experiments import apply_changes, comparison_markdown, paired_delta, run_experiments, update_readme
 from complibot.config import Settings
+from complibot.experiments import apply_changes, comparison_markdown, paired_delta, run_experiments, update_readme
 from complibot.llm import FakeProvider
 from complibot.rerank import LexicalReranker, LLMReranker, get_reranker
 from complibot.rewrite import LLMRewriter, RulesRewriter, get_rewriter
@@ -44,7 +44,7 @@ def test_llm_reranker_orders_by_grade_and_fails_open(retriever):
     grades = {"grades": [{"id": "C3", "grade": 3}, {"id": "C1", "grade": 1}, {"id": "C2", "grade": 0}]}
     rr = LLMReranker(FakeProvider(lambda s, u, sc: json.dumps(grades)))
     out = rr.rerank("q", cands)
-    assert [o.chunk.chunk_id for o in out] == [cands[2].chunk.chunk_id, cands[0].chunk.chunk_id, cands[1].chunk.chunk_id]
+    assert [o.chunk.chunk_id for o in out] == [cands[i].chunk.chunk_id for i in (2, 0, 1)]
     broken = LLMReranker(FakeProvider(lambda s, u, sc: "oops"))
     assert [o.chunk.chunk_id for o in broken.rerank("q", cands)] == [c.chunk.chunk_id for c in cands]
 
