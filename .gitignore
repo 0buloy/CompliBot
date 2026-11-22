@@ -15,3 +15,5 @@ data/raw/**/*.pdf
 data/index/*
 !data/index/.gitkeep
 eval/results/runs/
+eval/results/experiments/*/indexes/
+eval/results/experiments/*/runs/

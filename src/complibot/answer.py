@@ -184,9 +184,17 @@ class CompliBot:
         from .llm import get_provider
         from .store import load_index
 
+        from .rerank import get_reranker
+        from .rewrite import get_rewriter
+
+        llm = llm or get_provider(settings)
         index = load_index(settings.index_dir)
-        retriever = HybridRetriever(index, settings, embedder=get_embedder(settings))
-        return cls(settings, retriever, llm or get_provider(settings))
+        retriever = HybridRetriever(
+            index, settings, embedder=get_embedder(settings),
+            rewriter=get_rewriter(settings.rewriter, llm),
+            reranker=get_reranker(settings.reranker, llm, settings.rerank_model),
+        )
+        return cls(settings, retriever, llm)
 
     def ask(self, question: str, role: str = "public", top_k: int | None = None) -> AnswerResult:
         return answer_question(question, self.retriever, self.llm, role=role, top_k=top_k)

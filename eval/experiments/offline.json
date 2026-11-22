@@ -1,0 +1,49 @@
+{
+  "description": "Runs anywhere for free (fake LLM, heuristic judge). Shows the pipeline; real conclusions need full.json.",
+  "golden": "eval/golden/acme_demo.jsonl",
+  "reps": 1,
+  "judge_provider": "fake",
+  "baseline": {
+    "chunking": "section",
+    "embedder": "none",
+    "rewriter": "none",
+    "reranker": "none",
+    "provider": "fake",
+    "top_k": 6
+  },
+  "experiments": [
+    {
+      "name": "Fixed-size chunks (400 chars, 80 overlap)",
+      "changes": {
+        "chunking": "fixed",
+        "fixed_chunk_chars": 400,
+        "fixed_overlap_chars": 80
+      }
+    },
+    {
+      "name": "Hybrid: BM25 + dense (hash)",
+      "changes": {
+        "embedder": "hash"
+      }
+    },
+    {
+      "name": "Reranker (lexical)",
+      "changes": {
+        "reranker": "lexical"
+      }
+    },
+    {
+      "name": "Query rewriting (rules)",
+      "changes": {
+        "rewriter": "rules"
+      }
+    },
+    {
+      "name": "Rewriting + reranker",
+      "changes": {
+        "rewriter": "rules",
+        "reranker": "lexical"
+      }
+    }
+  ]
+}

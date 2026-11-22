@@ -12,6 +12,7 @@ similarities, which live on completely different scales.
 
 from __future__ import annotations
 
+import math
 import re
 
 import numpy as np
@@ -46,6 +47,19 @@ def _stem(tok: str) -> str:
     return tok
 
 
+class LuceneBM25(BM25Okapi):
+    """BM25 with Lucene/Elasticsearch IDF: log(1 + (N - n + 0.5) / (n + 0.5)).
+
+    rank_bm25's Okapi IDF, log((N - n + 0.5) / (n + 0.5)), is zero or negative for any
+    term found in half or more of the documents. In a small corpus (or with large
+    fixed-size windows) that wipes out every score. The Lucene form is always positive.
+    """
+
+    def _calc_idf(self, nd):
+        for word, freq in nd.items():
+            self.idf[word] = math.log(1 + (self.corpus_size - freq + 0.5) / (freq + 0.5))
+
+
 def index_text(chunk: Chunk) -> str:
     """What we actually index: titles help short clauses match topical queries."""
     return f"{chunk.doc_title}\n{chunk.section_id} {chunk.section_title}\n{chunk.text}"
@@ -61,17 +75,22 @@ def rrf_fuse(rankings: list[list[int]], k: int = 60) -> dict[int, float]:
 
 
 class HybridRetriever:
-    def __init__(self, index: IndexData, settings: Settings, embedder: Embedder | None = None):
+    """search() = [rewrite query] -> BM25 (+ dense) per query -> RRF -> [rerank top pool] -> top_k."""
+
+    def __init__(self, index: IndexData, settings: Settings, embedder: Embedder | None = None,
+                 rewriter=None, reranker=None):
         self.chunks = index.chunks
         self.settings = settings
         self.embedder = embedder
+        self.rewriter = rewriter  # rewrite.Rewriter | None
+        self.reranker = reranker  # rerank.Reranker | None
         self.embeddings = index.embeddings
         if embedder is not None and self.embeddings is None:
             raise ValueError("Dense search requested but the index has no embeddings; re-run ingest with an embedder.")
         built_with = index.meta.get("embedder")
         if embedder is not None and built_with and built_with != embedder.name:
             raise ValueError(f"Index embeddings were built with {built_with!r}, but query embedder is {embedder.name!r}.")
-        self.bm25 = BM25Okapi([tokenize(index_text(c)) for c in self.chunks]) if self.chunks else None
+        self.bm25 = LuceneBM25([tokenize(index_text(c)) for c in self.chunks]) if self.chunks else None
         self._levels = np.array([c.access_level for c in self.chunks])
 
     # ---- individual retrievers -------------------------------------------------
@@ -105,13 +124,34 @@ class HybridRetriever:
             return []
         mask = self._allowed_mask(role)
         pool = max(self.settings.candidate_pool, top_k)
-        bm25 = self.bm25_ranking(query, mask, pool)
-        dense = self.dense_ranking(query, mask, pool)
-        fused = rrf_fuse([r for r in (bm25, dense) if r], k=self.settings.rrf_k)
-        bm25_pos = {idx: r for r, idx in enumerate(bm25, start=1)}
-        dense_pos = {idx: r for r, idx in enumerate(dense, start=1)}
-        best = sorted(fused, key=lambda i: (-fused[i], i))[:top_k]
-        return [
+        queries = [query] + (self.rewriter.rewrite(query) if self.rewriter else [])
+        rankings: list[list[int]] = []
+        bm25_pos: dict[int, int] = {}
+        dense_pos: dict[int, int] = {}
+        for qi, q in enumerate(queries):
+            bm25 = self.bm25_ranking(q, mask, pool)
+            dense = self.dense_ranking(q, mask, pool)
+            rankings += [r for r in (bm25, dense) if r]
+            if qi == 0:  # ranks reported for the original query (debugging/eval)
+                bm25_pos = {idx: r for r, idx in enumerate(bm25, start=1)}
+                dense_pos = {idx: r for r, idx in enumerate(dense, start=1)}
+        fused = rrf_fuse(rankings, k=self.settings.rrf_k)
+        n_first_stage = max(top_k, self.settings.rerank_pool) if self.reranker else top_k
+        best = sorted(fused, key=lambda i: (-fused[i], i))[:n_first_stage]
+        results = [
             Retrieved(chunk=self.chunks[i], score=fused[i], bm25_rank=bm25_pos.get(i), dense_rank=dense_pos.get(i))
             for i in best
         ]
+        if self.reranker and results:
+            results = self.reranker.rerank(query, results)
+        return results[:top_k]
+
+    def pop_aux_usage(self) -> list:
+        """LLM calls made by the rewriter/reranker since the last call (for cost accounting)."""
+        out = []
+        for comp in (self.rewriter, self.reranker):
+            usage = getattr(comp, "usage", None)
+            if usage:
+                out.extend(usage)
+                usage.clear()
+        return out

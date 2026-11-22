@@ -24,7 +24,7 @@ from .config import Settings
 def _settings(args) -> Settings:
     s = Settings.from_env()
     changes = {}
-    for attr in ("chunking", "embedder", "data_dir", "index_dir"):
+    for attr in ("chunking", "embedder", "data_dir", "index_dir", "rewriter", "reranker"):
         val = getattr(args, attr, None)
         if val:
             changes[attr] = Path(val) if attr.endswith("_dir") else val
@@ -202,6 +202,21 @@ def cmd_eval_calibrate(args) -> int:
     return 0
 
 
+def cmd_experiment(args) -> int:
+    from .experiments import run_experiments, update_readme
+
+    config = json.loads(Path(args.config).read_text())
+    out = Path(args.out_dir) / Path(args.config).stem
+    report = run_experiments(config, out, base_settings=_settings(args), progress=True)
+    md = (out / "comparison.md").read_text()
+    print("\n" + md)
+    print(f"Saved {out}/comparison.md and comparison.json ({len(report['experiments'])} configurations)")
+    if args.update_readme:
+        ok = update_readme(Path("README.md"), md)
+        print("README.md updated" if ok else "README.md has no experiments markers; not updated")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="complibot", description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("--data-dir", dest="data_dir")
@@ -226,6 +241,8 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--top-k", dest="top_k", type=int)
         sp.add_argument("--embedder", choices=["none", "hash", "openai"])
         sp.add_argument("--provider", choices=["fake", "anthropic", "openai"])
+        sp.add_argument("--rewriter", choices=["none", "rules", "llm"])
+        sp.add_argument("--reranker", choices=["none", "lexical", "cross-encoder", "llm"])
         if name == "ask":
             sp.add_argument("--json", action="store_true", help="Print the full AnswerResult as JSON")
         sp.set_defaults(func=func)
@@ -241,12 +258,20 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--chunking", choices=["section", "fixed"])
     sp.add_argument("--embedder", choices=["none", "hash", "openai"])
     sp.add_argument("--top-k", dest="top_k", type=int)
+    sp.add_argument("--rewriter", choices=["none", "rules", "llm"])
+    sp.add_argument("--reranker", choices=["none", "lexical", "cross-encoder", "llm"])
     sp.add_argument("--label")
     sp.add_argument("--out-dir", dest="out_dir", default="eval/results/runs")
     sp.add_argument("--include-unverified", dest="include_unverified", action="store_true")
     sp.add_argument("--min", action="append", metavar="METRIC=VALUE",
                     help="fail (exit 1) if a metric mean is below VALUE, e.g. --min recall@5=0.8")
     sp.set_defaults(func=cmd_eval)
+
+    sp = sub.add_parser("experiment", help="Run A/B experiments and write a markdown comparison table")
+    sp.add_argument("--config", default="eval/experiments/offline.json")
+    sp.add_argument("--out-dir", dest="out_dir", default="eval/results/experiments")
+    sp.add_argument("--update-readme", dest="update_readme", action="store_true")
+    sp.set_defaults(func=cmd_experiment)
 
     sp = sub.add_parser("eval-generate", help="LLM-generate candidate golden items from the index")
     sp.add_argument("--per-doc", dest="per_doc", type=int, default=15)

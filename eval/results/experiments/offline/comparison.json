@@ -1,0 +1,1026 @@
+{
+  "golden": "eval/golden/acme_demo.jsonl",
+  "n_items": 31,
+  "reps": 1,
+  "generated_at": "2026-11-22 12:06",
+  "experiments": [
+    {
+      "name": "Baseline",
+      "chunking": "section",
+      "retrieval": "BM25",
+      "llm": "fake:fake",
+      "summary": {
+        "n_rows": 31,
+        "n_errors": 0,
+        "n_answerable": 24,
+        "n_unanswerable": 7,
+        "recall@1": {
+          "mean": 0.8541666666666666,
+          "ci95": 0.13807936788582426,
+          "n": 24
+        },
+        "recall@3": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "recall@5": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "recall@10": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "mrr": {
+          "mean": 0.9305555555555555,
+          "ci95": 0.07594272427187218,
+          "n": 24
+        },
+        "refusal_accuracy": {
+          "mean": 0.6129032258064516,
+          "ci95": 0.17430151970385055,
+          "n": 31
+        },
+        "false_refusal_rate": {
+          "mean": 0.3333333333333333,
+          "n": 24
+        },
+        "unsafe_answer_rate": {
+          "mean": 0.5714285714285714,
+          "n": 7
+        },
+        "supported_rate": {
+          "mean": 1.0,
+          "n": 16
+        },
+        "citation_precision": {
+          "mean": 0.9375,
+          "ci95": 0.1225,
+          "n": 16
+        },
+        "faithfulness": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 16
+        },
+        "correctness": {
+          "mean": 0.9375,
+          "ci95": 0.1225,
+          "n": 16
+        },
+        "latency_ms": {
+          "p50": 0.2743540001119982,
+          "p95": 0.3530190001583833
+        },
+        "llm_latency_ms": {
+          "p50": 0.12256100012564275,
+          "p95": 0.17601300010028353
+        },
+        "tokens": {
+          "input": 19453,
+          "output": 1311
+        },
+        "cost_usd": {
+          "answer_total": 0.0,
+          "answer_per_q": 0.0,
+          "judge_total": 0.0
+        },
+        "judge_errors": 0,
+        "served_models": [
+          "fake"
+        ],
+        "by_category": {
+          "approved-tools": {
+            "n": 4,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "data-handling": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "human-oversight": {
+            "n": 4,
+            "refusal_accuracy": 0.75,
+            "recall@5": 1.0
+          },
+          "incidents": {
+            "n": 3,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "model-risk": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "paraphrase": {
+            "n": 7,
+            "refusal_accuracy": 0.0,
+            "recall@5": 1.0
+          },
+          "role-gated": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": null
+          },
+          "scope": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "unanswerable": {
+            "n": 5,
+            "refusal_accuracy": 0.2,
+            "recall@5": null
+          }
+        }
+      },
+      "wall_s": 0.013525142999924356
+    },
+    {
+      "name": "Fixed-size chunks (400 chars, 80 overlap)",
+      "chunking": "fixed",
+      "retrieval": "BM25",
+      "llm": "fake:fake",
+      "summary": {
+        "n_rows": 31,
+        "n_errors": 0,
+        "n_answerable": 24,
+        "n_unanswerable": 7,
+        "recall@1": {
+          "mean": 0.8333333333333334,
+          "ci95": 0.15230911867925123,
+          "n": 24
+        },
+        "recall@3": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "recall@5": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "recall@10": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "mrr": {
+          "mean": 0.9166666666666666,
+          "ci95": 0.07615455933962562,
+          "n": 24
+        },
+        "refusal_accuracy": {
+          "mean": 0.6451612903225806,
+          "ci95": 0.17121629325899443,
+          "n": 31
+        },
+        "false_refusal_rate": {
+          "mean": 0.2916666666666667,
+          "n": 24
+        },
+        "unsafe_answer_rate": {
+          "mean": 0.5714285714285714,
+          "n": 7
+        },
+        "supported_rate": {
+          "mean": 1.0,
+          "n": 17
+        },
+        "citation_precision": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 17
+        },
+        "faithfulness": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 17
+        },
+        "correctness": {
+          "mean": 0.5294117647058824,
+          "ci95": 0.24457575725746467,
+          "n": 17
+        },
+        "latency_ms": {
+          "p50": 0.3751990000182559,
+          "p95": 0.4731330000140588
+        },
+        "llm_latency_ms": {
+          "p50": 0.2319150000857917,
+          "p95": 0.28023499999108026
+        },
+        "tokens": {
+          "input": 28213,
+          "output": 1462
+        },
+        "cost_usd": {
+          "answer_total": 0.0,
+          "answer_per_q": 0.0,
+          "judge_total": 0.0
+        },
+        "judge_errors": 0,
+        "served_models": [
+          "fake"
+        ],
+        "by_category": {
+          "approved-tools": {
+            "n": 4,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "data-handling": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "human-oversight": {
+            "n": 4,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "incidents": {
+            "n": 3,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "model-risk": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "paraphrase": {
+            "n": 7,
+            "refusal_accuracy": 0.0,
+            "recall@5": 1.0
+          },
+          "role-gated": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": null
+          },
+          "scope": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "unanswerable": {
+            "n": 5,
+            "refusal_accuracy": 0.2,
+            "recall@5": null
+          }
+        }
+      },
+      "wall_s": 0.01615878799998427,
+      "paired": {
+        "recall@1": {
+          "delta": -0.020833333333333332,
+          "ci95": 0.15015199625937822,
+          "n": 24,
+          "significant": false
+        },
+        "recall@5": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 24,
+          "significant": false
+        },
+        "mrr": {
+          "delta": -0.013888888888888888,
+          "ci95": 0.07335300204685626,
+          "n": 24,
+          "significant": false
+        },
+        "refusal_correct": {
+          "delta": 0.03225806451612903,
+          "ci95": 0.06322580645161291,
+          "n": 31,
+          "significant": false
+        },
+        "faithfulness": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 16,
+          "significant": false
+        },
+        "correctness": {
+          "delta": -0.375,
+          "ci95": 0.30337820180977626,
+          "n": 16,
+          "significant": true
+        }
+      }
+    },
+    {
+      "name": "Hybrid: BM25 + dense (hash)",
+      "chunking": "section",
+      "retrieval": "BM25+dense(hash)",
+      "llm": "fake:fake",
+      "summary": {
+        "n_rows": 31,
+        "n_errors": 0,
+        "n_answerable": 24,
+        "n_unanswerable": 7,
+        "recall@1": {
+          "mean": 0.7291666666666666,
+          "ci95": 0.17676226221395555,
+          "n": 24
+        },
+        "recall@3": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "recall@5": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "recall@10": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "mrr": {
+          "mean": 0.8680555555555555,
+          "ci95": 0.09425782571223386,
+          "n": 24
+        },
+        "refusal_accuracy": {
+          "mean": 0.6129032258064516,
+          "ci95": 0.17430151970385055,
+          "n": 31
+        },
+        "false_refusal_rate": {
+          "mean": 0.3333333333333333,
+          "n": 24
+        },
+        "unsafe_answer_rate": {
+          "mean": 0.5714285714285714,
+          "n": 7
+        },
+        "supported_rate": {
+          "mean": 1.0,
+          "n": 16
+        },
+        "citation_precision": {
+          "mean": 0.875,
+          "ci95": 0.16736686251067343,
+          "n": 16
+        },
+        "faithfulness": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 16
+        },
+        "correctness": {
+          "mean": 0.875,
+          "ci95": 0.16736686251067343,
+          "n": 16
+        },
+        "latency_ms": {
+          "p50": 0.36730400029227894,
+          "p95": 0.46813099993414653
+        },
+        "llm_latency_ms": {
+          "p50": 0.12870900013695064,
+          "p95": 0.1713369999833958
+        },
+        "tokens": {
+          "input": 20721,
+          "output": 1313
+        },
+        "cost_usd": {
+          "answer_total": 0.0,
+          "answer_per_q": 0.0,
+          "judge_total": 0.0
+        },
+        "judge_errors": 0,
+        "served_models": [
+          "fake"
+        ],
+        "by_category": {
+          "approved-tools": {
+            "n": 4,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "data-handling": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "human-oversight": {
+            "n": 4,
+            "refusal_accuracy": 0.75,
+            "recall@5": 1.0
+          },
+          "incidents": {
+            "n": 3,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "model-risk": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "paraphrase": {
+            "n": 7,
+            "refusal_accuracy": 0.0,
+            "recall@5": 1.0
+          },
+          "role-gated": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": null
+          },
+          "scope": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "unanswerable": {
+            "n": 5,
+            "refusal_accuracy": 0.2,
+            "recall@5": null
+          }
+        }
+      },
+      "wall_s": 0.016137004000029265,
+      "paired": {
+        "recall@1": {
+          "delta": -0.125,
+          "ci95": 0.17940824630038532,
+          "n": 24,
+          "significant": false
+        },
+        "recall@5": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 24,
+          "significant": false
+        },
+        "mrr": {
+          "delta": -0.0625,
+          "ci95": 0.1036979794112569,
+          "n": 24,
+          "significant": false
+        },
+        "refusal_correct": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 31,
+          "significant": false
+        },
+        "faithfulness": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 16,
+          "significant": false
+        },
+        "correctness": {
+          "delta": -0.0625,
+          "ci95": 0.1225,
+          "n": 16,
+          "significant": false
+        }
+      }
+    },
+    {
+      "name": "Reranker (lexical)",
+      "chunking": "section",
+      "retrieval": "BM25 +rerank(lexical)",
+      "llm": "fake:fake",
+      "summary": {
+        "n_rows": 31,
+        "n_errors": 0,
+        "n_answerable": 24,
+        "n_unanswerable": 7,
+        "recall@1": {
+          "mean": 0.8541666666666666,
+          "ci95": 0.13807936788582426,
+          "n": 24
+        },
+        "recall@3": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "recall@5": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "recall@10": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "mrr": {
+          "mean": 0.9305555555555555,
+          "ci95": 0.07594272427187218,
+          "n": 24
+        },
+        "refusal_accuracy": {
+          "mean": 0.6129032258064516,
+          "ci95": 0.17430151970385055,
+          "n": 31
+        },
+        "false_refusal_rate": {
+          "mean": 0.3333333333333333,
+          "n": 24
+        },
+        "unsafe_answer_rate": {
+          "mean": 0.5714285714285714,
+          "n": 7
+        },
+        "supported_rate": {
+          "mean": 1.0,
+          "n": 16
+        },
+        "citation_precision": {
+          "mean": 0.9375,
+          "ci95": 0.1225,
+          "n": 16
+        },
+        "faithfulness": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 16
+        },
+        "correctness": {
+          "mean": 0.9375,
+          "ci95": 0.1225,
+          "n": 16
+        },
+        "latency_ms": {
+          "p50": 0.5793990001166094,
+          "p95": 0.7209580001017457
+        },
+        "llm_latency_ms": {
+          "p50": 0.12393299994073459,
+          "p95": 0.17573800005266094
+        },
+        "tokens": {
+          "input": 19438,
+          "output": 1311
+        },
+        "cost_usd": {
+          "answer_total": 0.0,
+          "answer_per_q": 0.0,
+          "judge_total": 0.0
+        },
+        "judge_errors": 0,
+        "served_models": [
+          "fake"
+        ],
+        "by_category": {
+          "approved-tools": {
+            "n": 4,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "data-handling": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "human-oversight": {
+            "n": 4,
+            "refusal_accuracy": 0.75,
+            "recall@5": 1.0
+          },
+          "incidents": {
+            "n": 3,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "model-risk": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "paraphrase": {
+            "n": 7,
+            "refusal_accuracy": 0.0,
+            "recall@5": 1.0
+          },
+          "role-gated": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": null
+          },
+          "scope": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "unanswerable": {
+            "n": 5,
+            "refusal_accuracy": 0.2,
+            "recall@5": null
+          }
+        }
+      },
+      "wall_s": 0.020550150999952166,
+      "paired": {
+        "recall@1": {
+          "delta": 0.0,
+          "ci95": 0.11797813602405381,
+          "n": 24,
+          "significant": false
+        },
+        "recall@5": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 24,
+          "significant": false
+        },
+        "mrr": {
+          "delta": 0.0,
+          "ci95": 0.058989068012026906,
+          "n": 24,
+          "significant": false
+        },
+        "refusal_correct": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 31,
+          "significant": false
+        },
+        "faithfulness": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 16,
+          "significant": false
+        },
+        "correctness": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 16,
+          "significant": false
+        }
+      }
+    },
+    {
+      "name": "Query rewriting (rules)",
+      "chunking": "section",
+      "retrieval": "BM25 +rewrite(rules)",
+      "llm": "fake:fake",
+      "summary": {
+        "n_rows": 31,
+        "n_errors": 0,
+        "n_answerable": 24,
+        "n_unanswerable": 7,
+        "recall@1": {
+          "mean": 0.8958333333333334,
+          "ci95": 0.1176705002044161,
+          "n": 24
+        },
+        "recall@3": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "recall@5": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "recall@10": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "mrr": {
+          "mean": 0.9583333333333334,
+          "ci95": 0.05647773277599685,
+          "n": 24
+        },
+        "refusal_accuracy": {
+          "mean": 0.6129032258064516,
+          "ci95": 0.17430151970385055,
+          "n": 31
+        },
+        "false_refusal_rate": {
+          "mean": 0.3333333333333333,
+          "n": 24
+        },
+        "unsafe_answer_rate": {
+          "mean": 0.5714285714285714,
+          "n": 7
+        },
+        "supported_rate": {
+          "mean": 1.0,
+          "n": 16
+        },
+        "citation_precision": {
+          "mean": 0.9375,
+          "ci95": 0.1225,
+          "n": 16
+        },
+        "faithfulness": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 16
+        },
+        "correctness": {
+          "mean": 0.9375,
+          "ci95": 0.1225,
+          "n": 16
+        },
+        "latency_ms": {
+          "p50": 0.32396299980064214,
+          "p95": 0.5072769999969751
+        },
+        "llm_latency_ms": {
+          "p50": 0.12844899993069703,
+          "p95": 0.168450000046505
+        },
+        "tokens": {
+          "input": 20257,
+          "output": 1311
+        },
+        "cost_usd": {
+          "answer_total": 0.0,
+          "answer_per_q": 0.0,
+          "judge_total": 0.0
+        },
+        "judge_errors": 0,
+        "served_models": [
+          "fake"
+        ],
+        "by_category": {
+          "approved-tools": {
+            "n": 4,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "data-handling": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "human-oversight": {
+            "n": 4,
+            "refusal_accuracy": 0.75,
+            "recall@5": 1.0
+          },
+          "incidents": {
+            "n": 3,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "model-risk": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "paraphrase": {
+            "n": 7,
+            "refusal_accuracy": 0.0,
+            "recall@5": 1.0
+          },
+          "role-gated": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": null
+          },
+          "scope": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "unanswerable": {
+            "n": 5,
+            "refusal_accuracy": 0.2,
+            "recall@5": null
+          }
+        }
+      },
+      "wall_s": 0.015263682000068002,
+      "paired": {
+        "recall@1": {
+          "delta": 0.041666666666666664,
+          "ci95": 0.08166666666666667,
+          "n": 24,
+          "significant": false
+        },
+        "recall@5": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 24,
+          "significant": false
+        },
+        "mrr": {
+          "delta": 0.02777777777777778,
+          "ci95": 0.054444444444444455,
+          "n": 24,
+          "significant": false
+        },
+        "refusal_correct": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 31,
+          "significant": false
+        },
+        "faithfulness": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 16,
+          "significant": false
+        },
+        "correctness": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 16,
+          "significant": false
+        }
+      }
+    },
+    {
+      "name": "Rewriting + reranker",
+      "chunking": "section",
+      "retrieval": "BM25 +rewrite(rules) +rerank(lexical)",
+      "llm": "fake:fake",
+      "summary": {
+        "n_rows": 31,
+        "n_errors": 0,
+        "n_answerable": 24,
+        "n_unanswerable": 7,
+        "recall@1": {
+          "mean": 0.8958333333333334,
+          "ci95": 0.1176705002044161,
+          "n": 24
+        },
+        "recall@3": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "recall@5": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "recall@10": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 24
+        },
+        "mrr": {
+          "mean": 0.9583333333333334,
+          "ci95": 0.05647773277599685,
+          "n": 24
+        },
+        "refusal_accuracy": {
+          "mean": 0.6129032258064516,
+          "ci95": 0.17430151970385055,
+          "n": 31
+        },
+        "false_refusal_rate": {
+          "mean": 0.3333333333333333,
+          "n": 24
+        },
+        "unsafe_answer_rate": {
+          "mean": 0.5714285714285714,
+          "n": 7
+        },
+        "supported_rate": {
+          "mean": 1.0,
+          "n": 16
+        },
+        "citation_precision": {
+          "mean": 0.9375,
+          "ci95": 0.1225,
+          "n": 16
+        },
+        "faithfulness": {
+          "mean": 1.0,
+          "ci95": 0.0,
+          "n": 16
+        },
+        "correctness": {
+          "mean": 0.9375,
+          "ci95": 0.1225,
+          "n": 16
+        },
+        "latency_ms": {
+          "p50": 0.6114269999670796,
+          "p95": 0.8317789997818181
+        },
+        "llm_latency_ms": {
+          "p50": 0.1257490000625694,
+          "p95": 0.14667899995401967
+        },
+        "tokens": {
+          "input": 20266,
+          "output": 1311
+        },
+        "cost_usd": {
+          "answer_total": 0.0,
+          "answer_per_q": 0.0,
+          "judge_total": 0.0
+        },
+        "judge_errors": 0,
+        "served_models": [
+          "fake"
+        ],
+        "by_category": {
+          "approved-tools": {
+            "n": 4,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "data-handling": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "human-oversight": {
+            "n": 4,
+            "refusal_accuracy": 0.75,
+            "recall@5": 1.0
+          },
+          "incidents": {
+            "n": 3,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "model-risk": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "paraphrase": {
+            "n": 7,
+            "refusal_accuracy": 0.0,
+            "recall@5": 1.0
+          },
+          "role-gated": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": null
+          },
+          "scope": {
+            "n": 2,
+            "refusal_accuracy": 1.0,
+            "recall@5": 1.0
+          },
+          "unanswerable": {
+            "n": 5,
+            "refusal_accuracy": 0.2,
+            "recall@5": null
+          }
+        }
+      },
+      "wall_s": 0.022747296000034112,
+      "paired": {
+        "recall@1": {
+          "delta": 0.041666666666666664,
+          "ci95": 0.1434861840880668,
+          "n": 24,
+          "significant": false
+        },
+        "recall@5": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 24,
+          "significant": false
+        },
+        "mrr": {
+          "delta": 0.02777777777777778,
+          "ci95": 0.08027395390655512,
+          "n": 24,
+          "significant": false
+        },
+        "refusal_correct": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 31,
+          "significant": false
+        },
+        "faithfulness": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 16,
+          "significant": false
+        },
+        "correctness": {
+          "delta": 0.0,
+          "ci95": 0.0,
+          "n": 16,
+          "significant": false
+        }
+      }
+    }
+  ]
+}

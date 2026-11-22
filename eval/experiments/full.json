@@ -1,0 +1,55 @@
+{
+  "description": "Real models. Needs ANTHROPIC_API_KEY (and OPENAI_API_KEY for embeddings / the OpenAI row) plus `pip install sentence-transformers` for the cross-encoder. Use your labelled sg_regulations.jsonl.",
+  "golden": "eval/golden/sg_regulations.jsonl",
+  "reps": 2,
+  "judge_provider": "anthropic",
+  "baseline": {
+    "chunking": "section",
+    "embedder": "none",
+    "rewriter": "none",
+    "reranker": "none",
+    "provider": "anthropic",
+    "anthropic_model": "claude-opus-5-5",
+    "judge_model": "claude-sonnet-5-5",
+    "top_k": 6
+  },
+  "experiments": [
+    {
+      "name": "Fixed-size chunks (1200 chars, 200 overlap)",
+      "changes": {
+        "chunking": "fixed"
+      }
+    },
+    {
+      "name": "Hybrid dense (OpenAI embeddings)",
+      "changes": {
+        "embedder": "openai"
+      }
+    },
+    {
+      "name": "Cross-encoder reranker",
+      "changes": {
+        "reranker": "cross-encoder"
+      }
+    },
+    {
+      "name": "LLM query rewriting",
+      "changes": {
+        "rewriter": "llm"
+      }
+    },
+    {
+      "name": "LLM B: Claude Haiku 5.5",
+      "changes": {
+        "anthropic_model": "claude-haiku-5-5"
+      }
+    },
+    {
+      "name": "LLM B: OpenAI",
+      "changes": {
+        "provider": "openai"
+      },
+      "enabled": false
+    }
+  ]
+}

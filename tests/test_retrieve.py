@@ -62,3 +62,16 @@ def test_dense_index_mismatch_is_rejected(index, settings):
 
     with pytest.raises(ValueError, match="no embeddings"):
         HybridRetriever(index, settings, embedder=HashEmbedder())
+
+
+def test_bm25_idf_stays_positive_in_tiny_corpus(settings):
+    """Regression: Okapi IDF is <= 0 when N=2, which used to return no results at all."""
+    from complibot.retrieve import HybridRetriever
+    from complibot.schemas import Chunk
+    from complibot.store import IndexData
+
+    chunks = [Chunk(f"d::{i}", "d", "D", str(i), "", 1, 1, "public", t, [str(i)])
+              for i, t in enumerate(["consent must be obtained", "consent may be withdrawn"])]
+    r = HybridRetriever(IndexData(chunks), settings)
+    res = r.search("withdrawn consent", role="public")
+    assert [x.chunk.section_id for x in res] == ["1", "0"]

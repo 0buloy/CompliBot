@@ -152,8 +152,10 @@ def _null(item: GoldenItem, bot: CompliBot, retrieved: list[Retrieved]) -> tuple
 
 def run_case(item: GoldenItem, bot: CompliBot, judge: Judge | None, system: str = "rag", rep: int = 0) -> dict:
     t0 = time.perf_counter()
+    bot.retriever.pop_aux_usage()
     retrieved = bot.retriever.search(item.question, role=item.role, top_k=max(KS))
     retrieval_ms = (time.perf_counter() - t0) * 1000
+    aux = bot.retriever.pop_aux_usage()  # LLM calls made by query rewriting / reranking
     if system == "oracle":
         retrieved, result = _oracle(item, bot, retrieved)
     elif system == "null":
@@ -173,8 +175,11 @@ def run_case(item: GoldenItem, bot: CompliBot, judge: Judge | None, system: str 
         "invalid_citations": result.invalid_citations, "error": result.error,
         "latency_ms": retrieval_ms + result.latency_ms, "llm_latency_ms": result.usage.llm_latency_ms,
         "input_tokens": result.usage.input_tokens, "output_tokens": result.usage.output_tokens,
-        "cost_usd": result.usage.cost_usd, "served_model": result.usage.model,
+        "cost_usd": result.usage.cost_usd + sum(a.cost_usd for a in aux),
+        "aux_llm_calls": len(aux), "served_model": result.usage.model,
     }
+    row["input_tokens"] += sum(a.input_tokens for a in aux)
+    row["output_tokens"] += sum(a.output_tokens for a in aux)
     if result.status == "error":
         return row
 

@@ -55,6 +55,10 @@ class Settings:
     embedder: str = "none"  # "none" | "openai" | "hash"
     rrf_k: int = 60
     candidate_pool: int = 30  # how many results each retriever contributes to RRF
+    rewriter: str = "none"  # "none" | "rules" | "llm"
+    reranker: str = "none"  # "none" | "lexical" | "cross-encoder" | "llm"
+    rerank_pool: int = 20  # first-stage candidates the reranker re-orders
+    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
     # LLM
     llm_provider: str = "fake"  # "fake" | "anthropic" | "openai"
@@ -81,6 +85,9 @@ class Settings:
             chunking=_env("COMPLIBOT_CHUNKING", "section"),
             top_k=_env_int("COMPLIBOT_TOP_K", 6),
             embedder=_env("COMPLIBOT_EMBEDDER", "none"),
+            rewriter=_env("COMPLIBOT_REWRITER", "none"),
+            reranker=_env("COMPLIBOT_RERANKER", "none"),
+            rerank_model=_env("COMPLIBOT_RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
             llm_provider=_env("COMPLIBOT_LLM_PROVIDER", "fake"),
             anthropic_model=_env("ANTHROPIC_MODEL", "claude-opus-5-5"),
             anthropic_effort=_env("ANTHROPIC_EFFORT", "medium"),
