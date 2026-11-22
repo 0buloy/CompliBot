@@ -1,0 +1,25 @@
+FAKE TEST DOCUMENT - NOT A REAL REGULATION
+Fictional Technology Risk Notice (Internal) for Unit Tests
+Page 1
+---page---
+FAKE TEST DOCUMENT - NOT A REAL REGULATION
+5 SYSTEM RESILIENCE
+5.1 Recovery Objectives
+5.1.1 A financial institution should establish a recovery time objective (RTO)
+of not more than 4 hours for each critical system.
+5.1.2 The financial institution should test its disaster recovery plan at least
+once every 12 months, involving its key service providers.
+5.2 Incident Reporting
+5.2.1 A financial institution should notify the regulator within 1 hour of
+discovering a relevant incident that has a severe and widespread impact.
+Page 2
+---page---
+FAKE TEST DOCUMENT - NOT A REAL REGULATION
+5.2.2 A root cause and impact analysis report should be submitted within
+14 days of discovering the incident.
+Page 3
+---page---
+FAKE TEST DOCUMENT - NOT A REAL REGULATION
+Annex A Glossary
+Critical system means a fictional system whose failure would disrupt services.
+Page 4

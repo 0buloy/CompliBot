@@ -1,0 +1,47 @@
+FAKE TEST DOCUMENT - NOT A REAL REGULATION
+Fictional Data Protection Guidelines for Unit Tests
+This text was written for CompliBot's test-suite. It imitates the layout of
+Singapore advisory guidelines but none of its content is real law or guidance.
+Page 1
+---page---
+FAKE TEST DOCUMENT - NOT A REAL REGULATION
+CONTENTS
+1 INTRODUCTION ........................................ 2
+2 THE CONSENT OBLIGATION ............................. 2
+3 THE PROTECTION OBLIGATION .......................... 3
+3.1 Security Arrangements ............................ 3
+4 THE RETENTION LIMITATION OBLIGATION ................ 3
+Page 2
+---page---
+FAKE TEST DOCUMENT - NOT A REAL REGULATION
+1 INTRODUCTION
+1.1 These fictional guidelines explain how an imaginary organisation should
+treat personal data. They exist only to test clause-aware chunking.
+2 THE CONSENT OBLIGATION
+2.1 An organisation must obtain the consent of an individual before collecting,
+using or disclosing the individual's personal data for a purpose, unless an
+exception applies.
+2.2 Consent must be informed. The organisation should notify the individual of
+the purposes for which the personal data will be collected, used or disclosed,
+and the notification should be made on or before collection.
+2.3 An individual may withdraw consent at any time by giving reasonable notice.
+The organisation must stop collecting, using or disclosing the personal data
+within 10 business days of receiving the withdrawal notice.
+Page 3
+---page---
+FAKE TEST DOCUMENT - NOT A REAL REGULATION
+3 THE PROTECTION OBLIGATION
+3.1 Security Arrangements
+3.1.1 An organisation must protect personal data in its possession by making
+reasonable security arrangements to prevent unauthorised access, collection,
+use, disclosure, copying or modification.
+3.1.2 Encryption should be applied to personal data stored on portable devices
+such as laptops and USB drives. The organisation should also maintain an
+access log reviewed at least quarterly. Fees increased by
+2.5 per cent in the fictional example year, which must not be read as a clause.
+4 THE RETENTION LIMITATION OBLIGATION
+4.1 An organisation should cease to retain personal data as soon as the purpose
+for which it was collected is no longer being served by retention.
+4.2 Personal data that is no longer needed should be anonymised or securely
+destroyed within 30 days.
+Page 4

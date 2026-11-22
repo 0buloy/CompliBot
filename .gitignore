@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+# Regulatory PDFs are downloaded by you, not committed (keep the repo small and licence-clean)
+data/raw/**/*.pdf
+# Built index artefacts
+data/index/*
+!data/index/.gitkeep
