@@ -44,6 +44,32 @@ MONTH_RE = re.compile(
     r"^(january|february|march|april|may|june|july|august|september|october|november|december)\b", re.I
 )
 SMALL_WORDS = {"a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "the", "to", "with", "vs", "via"}
+# Lowercase verbs that mark a sentence, not a heading ("The PDPA establishes ...", "... number is a ...").
+SENTENCE_VERBS = {"is", "are", "was", "were", "be", "been", "should", "must", "may", "will", "shall", "can",
+                  "could", "would", "has", "have", "had", "does", "do", "applies", "apply", "provides", "sets",
+                  "establishes", "refers", "refer", "clarify", "clarifies", "includes", "include", "means"}
+# Marks a line whose paragraph number was drawn as an image (see _mark_image_numbers).
+MISSING_NUMBER = "\x00"
+_MARKER_RE = re.compile(r"^ [A-Z“\"(‘]")
+
+
+def _image_count(page) -> int:
+    xobjects = page.get("/Resources", {}).get("/XObject") or {}
+    return sum(1 for x in xobjects.values() if x.get_object().get("/Subtype") == "/Image")
+
+
+def _mark_image_numbers(text: str, n_images: int) -> str | None:
+    """Some PDFs (e.g. the PDPC Key Concepts guidelines, pages 2-89) draw paragraph numbers as
+    small images. pypdf then emits each such line with a leading space where the number was.
+    If a page has exactly as many of those lines as images, tag them so the segmenter can
+    reconstruct the numbers; otherwise return None."""
+    lines = text.splitlines()
+    markers = [i for i, ln in enumerate(lines) if _MARKER_RE.match(ln)]
+    if not markers or len(markers) != n_images:
+        return None
+    for i in markers:
+        lines[i] = MISSING_NUMBER + lines[i].strip()
+    return "\n".join(lines)
 
 
 # --------------------------------------------------------------------------- pages
@@ -53,15 +79,40 @@ def load_pages(path: Path) -> list[str]:
     """Return the text of each page (index 0 = page 1)."""
     suffix = path.suffix.lower()
     if suffix == ".pdf":
-        from pypdf import PdfReader
-
-        reader = PdfReader(str(path))
-        return [(page.extract_text() or "") for page in reader.pages]
+        return _load_pdf_pages(path)
     if suffix in {".txt", ".md"}:
         text = path.read_text(encoding="utf-8")
         text = text.replace(f"\n{PAGE_MARKER}\n", "\f")
         return text.split("\f")
     raise ValueError(f"Unsupported file type: {path}")
+
+
+def _load_pdf_pages(path: Path) -> list[str]:
+    """Per page: PDFium text (fewer broken words) unless the page uses image paragraph
+    numbers, where pypdf's output lets us find and reconstruct them."""
+    import logging
+
+    from pypdf import PdfReader
+
+    logging.getLogger("pypdf").setLevel(logging.ERROR)  # font warnings are noise here
+    reader = PdfReader(str(path))
+    try:
+        import pypdfium2 as pdfium
+
+        doc = pdfium.PdfDocument(str(path))
+    except Exception:  # pypdfium2 not installed or can't open the file: pypdf only
+        doc = None
+    pages = []
+    for i, page in enumerate(reader.pages):
+        text = page.extract_text() or ""
+        marked = _mark_image_numbers(text, _image_count(page))
+        if marked is not None:
+            pages.append(marked)
+        elif doc is not None:
+            pages.append(doc[i].get_textpage().get_text_range().replace("\r", ""))
+        else:
+            pages.append(text)
+    return pages
 
 
 def _norm(line: str) -> str:
@@ -119,6 +170,8 @@ def _title_like(text: str) -> bool:
     letters = "".join(words)
     if letters.isupper():
         return True
+    if any(w in SENTENCE_VERBS for w in words):
+        return False
     content = [w for w in words if w.lower() not in SMALL_WORDS]
     if not content:
         return False
@@ -190,6 +243,22 @@ class Segment:
         return "\n".join(t for t, _ in self.lines).strip()
 
 
+def clean_title(title: str) -> str:
+    """Strip footnote markers glued to a heading: 'The Accountability Obligation82' -> '... Obligation'."""
+    return re.sub(r"(?<=[A-Za-z”’)])\d{1,3}$", "", title.strip()).strip()
+
+
+def _reconstruct_number(rest: str, prev: tuple[int, ...] | None) -> _Candidate:
+    """Give an image-numbered line its number back. Short lines without sentence punctuation
+    are chapter headings ("Definitions and related matters" -> next chapter); everything else
+    is the next paragraph in the current chapter. Typed numbers elsewhere re-sync the count."""
+    chapter = prev[0] if prev else 0
+    para = prev[1] if prev and len(prev) > 1 else 0
+    if len(rest) < 60 and rest[-1] not in ".:;,":
+        return _Candidate(str(chapter + 1), rest, "heading")
+    return _Candidate(f"{chapter}.{para + 1}", rest, "clause")
+
+
 def segment_document(pages: list[list[str]], doc_title: str) -> list[Segment]:
     """Turn cleaned pages into clause-level segments."""
     flat: list[tuple[str, int]] = [(ln, pno + 1) for pno, lines in enumerate(pages) for ln in lines]
@@ -207,10 +276,15 @@ def segment_document(pages: list[list[str]], doc_title: str) -> list[Segment]:
         return headings.get(num, doc_title)
 
     for i, (line, page) in enumerate(flat):
-        nxt = flat[i + 1][0] if i + 1 < len(flat) else None
-        cand = classify_line(line, nxt)
-        if cand and cand.parts and not _plausible_next(prev_parts, cand.parts):
-            cand = None
+        if line.startswith(MISSING_NUMBER):  # number was drawn as an image: reconstruct it
+            cand = _reconstruct_number(line[1:].strip(), prev_parts)
+            line = f"{cand.num} {cand.rest}"
+        else:
+            nxt = flat[i + 1][0] if i + 1 < len(flat) else None
+            nxt = nxt[1:] if nxt and nxt.startswith(MISSING_NUMBER) else nxt
+            cand = classify_line(line, nxt)
+            if cand and cand.parts and not _plausible_next(prev_parts, cand.parts):
+                cand = None
         if cand is None:
             current.lines.append((line, page))
             continue
@@ -219,6 +293,7 @@ def segment_document(pages: list[list[str]], doc_title: str) -> list[Segment]:
         if cand.parts:
             prev_parts = cand.parts
         if cand.kind == "heading":
+            cand.rest = clean_title(cand.rest)
             headings[cand.num] = cand.rest
             current = Segment(cand.num, cand.rest, [(line.strip(), page)])
         else:
@@ -238,6 +313,47 @@ def segment_document(pages: list[list[str]], doc_title: str) -> list[Segment]:
         if seg.lines:
             out.append(seg)
     return out
+
+
+def numbering_is_unreliable(segments: list[Segment], n_pages: int, min_clauses: int = 8,
+                            max_share: float = 0.3) -> bool:
+    """True for documents that don't use numbered paragraphs (e.g. designed brochures): no
+    numbered segments at all, or - in a document of 6+ pages - too few of them, or one
+    'section' holding a large share of all the text."""
+    numbered = [s for s in segments if s.section_id != "preamble"]
+    if not numbered:
+        return True
+    if n_pages < 6:
+        return False
+    total = sum(len(s.text) for s in segments) or 1
+    biggest = max(len(s.text) for s in numbered)
+    return len(numbered) < min_clauses or biggest / total > max_share
+
+
+def page_segments(pages: list[list[str]], doc_title: str) -> list[Segment]:
+    """Fallback: one segment per page, cited as 'p12', titled by the page's first heading-like
+    line (or the last one seen). Honest and checkable when there are no clause numbers."""
+    segments, title = [], doc_title
+    for pno, lines in enumerate(pages, start=1):
+        if not lines:
+            continue
+        heads, run = [], []
+        for ln in lines[:6] + [""]:  # join runs of ALL-CAPS lines: "TRUSTED" + "DEVELOPMENT AND" + ...
+            text = ln.strip()
+            if text and text.isupper() and not re.search(r"\d", text):
+                run.append(text)
+                continue
+            if run:
+                heads.append(" ".join(run))
+                run = []
+            if 3 < len(text) < 70 and _title_like(text) and not re.search(r"\d", text):
+                heads.append(text)
+        heads = [h for h in heads if 3 < len(h) < 90]
+        if heads:
+            text = max(heads, key=len)  # the full heading, not a fragment like "TRUSTED"
+            title = clean_title(text.title() if text.isupper() else text)
+        segments.append(Segment(f"p{pno}", title, [(ln, pno) for ln in lines]))
+    return segments
 
 
 # -------------------------------------------------------------------------- chunks
@@ -392,6 +508,8 @@ def ingest_file(
     if path.suffix.lower() == ".md" and pages and pages[0] and pages[0][0].startswith("# "):
         pages[0] = pages[0][1:]  # the markdown title line is metadata, not content
     segments = segment_document(pages, title)
+    if path.suffix.lower() == ".pdf" and numbering_is_unreliable(segments, len(pages)):
+        segments = page_segments(pages, title)
     doc_id = path.stem
     level = access_level_for(path, data_dir)
     if strategy == "fixed":

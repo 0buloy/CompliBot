@@ -125,3 +125,38 @@ def test_chunk_ids_are_unique():
     chunks = ingest_directory(FIX)
     ids = [c.chunk_id for c in chunks]
     assert len(ids) == len(set(ids))
+
+
+def test_image_numbered_paragraphs_are_reconstructed():
+    """Some PDPC PDFs draw paragraph numbers as images; pypdf leaves a leading space instead."""
+    from complibot.ingest import _mark_image_numbers, segment_document
+
+    page = " Introduction\n The PDPA establishes a general data protection law in Singapore which governs data.\n" \
+           " These Guidelines should be read in conjunction with the document titled Introduction.\n" \
+           " Overview of the PDPA\n The PDPA governs the collection, use and disclosure of personal data by firms."
+    assert _mark_image_numbers(page, n_images=4) is None  # marker count must equal image count
+    marked = _mark_image_numbers(page, n_images=5)
+    pages = [marked.splitlines(), ["2.2 The PDPA's obligations are set out in Parts 3 to 6A of the PDPA."]]
+    segs = {s.section_id: s for s in segment_document(pages, "Doc")}
+    assert set(segs) == {"1.1", "1.2", "2.1", "2.2"}  # typed 2.2 continues the reconstructed count
+    assert segs["1.2"].section_title == "Introduction" and segs["2.1"].section_title == "Overview of the PDPA"
+    assert segs["1.1"].text.startswith("1.1 The PDPA establishes")
+
+
+def test_unnumbered_documents_fall_back_to_pages():
+    from complibot.ingest import Segment, numbering_is_unreliable, page_segments
+
+    big = [Segment("1", "Intro", [("x " * 5000, 1)]), Segment("2", "B", [("y", 2)])]
+    assert numbering_is_unreliable(big, n_pages=20)
+    assert not numbering_is_unreliable(big, n_pages=3)  # short docs keep their numbering
+    segs = page_segments([["DATA", "Data is a core element of model development."], ["more text"]], "Doc")
+    assert [(s.section_id, s.section_title) for s in segs] == [("p1", "Data"), ("p2", "Data")]
+
+
+def test_heading_rules():
+    from complibot.ingest import clean_title
+
+    # A clause starting with proper nouns is not a heading.
+    line = "1.2 The Singapore National Registration Identification Card (NRIC) number is"
+    assert classify_line(line).kind == "clause"
+    assert clean_title("The Accountability Obligation82") == "The Accountability Obligation"
