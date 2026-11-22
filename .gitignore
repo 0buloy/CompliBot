@@ -14,3 +14,4 @@ data/raw/**/*.pdf
 # Built index artefacts
 data/index/*
 !data/index/.gitkeep
+eval/results/runs/

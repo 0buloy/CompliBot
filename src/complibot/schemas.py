@@ -63,7 +63,8 @@ class Usage(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
-    model: str = ""
+    model: str = ""  # the model that actually served the request (may differ on fallback)
+    llm_latency_ms: float = 0.0
 
 
 AnswerStatus = Literal["answered", "refused", "unsupported", "error"]

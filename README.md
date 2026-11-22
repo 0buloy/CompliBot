@@ -5,8 +5,8 @@ documents (MAS Technology Risk Management Guidelines, PDPC PDPA advisory guideli
 Governance Framework), with clause-level citations on every answer and an "I don't know" when the
 documents don't support one.
 
-> Status: Phase 1 (core RAG) is done. Evaluation, experiments, agent + guardrails, and deployment are
-> coming in later phases.
+> Status: Phase 1 (core RAG) and Phase 2 (evaluation) are done. Experiments, agent + guardrails, and
+> deployment come next.
 
 ## What it does
 
@@ -33,7 +33,8 @@ cp .env.example .env            # defaults: fake LLM, BM25 only, no keys needed
 complibot ingest                # builds data/index from data/raw
 complibot ask "Can I paste a customer's NRIC into an AI tool?" --role internal
 complibot ask "Can I paste a customer's NRIC into an AI tool?" --role public   # -> I don't know
-pytest                          # 52 tests, offline
+complibot eval                  # golden-set eval: recall@k, refusal, faithfulness, cost
+pytest                          # offline test suite
 ```
 
 The repo ships one **fictional** internal policy, so the commands above work right away. To use the
@@ -66,6 +67,13 @@ curl -s localhost:8000/ask -H 'Content-Type: application/json' \
 
 Interactive docs: `http://localhost:8000/docs`.
 
+## Evaluation
+
+`complibot eval` scores the golden set on recall@k, MRR, refusal accuracy, unsafe answer rate,
+citation validity and precision, LLM-judge faithfulness and correctness, latency and cost. It
+also has oracle and null sanity baselines. See [`eval/README.md`](eval/README.md) for the
+metric definitions and the method for growing the golden set to 100+ items.
+
 ## Layout
 
 ```
@@ -78,8 +86,12 @@ src/complibot/
   llm.py         anthropic | openai | fake providers, JSON parsing, cost table
   answer.py      prompt, citation validation, refusal logic, CompliBot facade
   api.py         FastAPI app (role from X-API-Key)
-  cli.py         ingest | inspect | search | ask | serve
+  judge.py       LLM-as-judge: faithfulness (per-claim) and correctness, offline heuristic judge
+  evaluation.py  golden set, per-case scoring, summary with 95% CIs, oracle/null baselines
+  labeling.py    candidate generation + interactive labelling for the golden set
+  cli.py         ingest | inspect | search | ask | serve | eval | eval-generate | eval-label | eval-calibrate
 tests/           pytest; fixture documents are clearly marked FAKE
+eval/            golden sets, judge calibration set, results
 data/raw/        public/ and internal/ (folder = access level)
 data/index/      built index (git-ignored)
 ```

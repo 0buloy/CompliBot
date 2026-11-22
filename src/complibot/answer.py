@@ -116,10 +116,13 @@ def answer_question(
     llm: LLMProvider,
     role: str = "public",
     top_k: int | None = None,
+    retrieved: list[Retrieved] | None = None,
 ) -> AnswerResult:
+    """Answer one question. Pass `retrieved` to reuse a search already done (the evaluator does)."""
     t0 = time.perf_counter()
     question = question.strip()
-    retrieved = retriever.search(question, role=role, top_k=top_k)
+    if retrieved is None:
+        retrieved = retriever.search(question, role=role, top_k=top_k)
     ids = [r.chunk.chunk_id for r in retrieved]
 
     def done(**kw) -> AnswerResult:
@@ -138,7 +141,7 @@ def answer_question(
         return done(answer="The language model is unavailable right now; please try again.", status="error",
                     refused=False, supported=False, error=str(e))
     usage = Usage(input_tokens=resp.input_tokens, output_tokens=resp.output_tokens, cost_usd=resp.cost_usd,
-                  model=resp.model)
+                  model=resp.model, llm_latency_ms=resp.latency_ms)
 
     try:
         data = parse_json_object(resp.text)

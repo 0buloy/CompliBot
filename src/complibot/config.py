@@ -65,6 +65,10 @@ class Settings:
     openai_embed_model: str = "text-embedding-3-small"
     max_output_tokens: int = 4000
 
+    # Evaluation: the judge should be a different model from the one under test
+    judge_provider: str = "fake"  # "fake" | "anthropic" | "openai"
+    judge_model: str = "claude-sonnet-5-5"
+
     # API access control
     internal_api_keys: frozenset[str] = field(default_factory=frozenset)
 
@@ -84,6 +88,8 @@ class Settings:
             openai_model=_env("OPENAI_MODEL", ""),
             openai_embed_model=_env("OPENAI_EMBED_MODEL", "text-embedding-3-small"),
             max_output_tokens=_env_int("COMPLIBOT_MAX_OUTPUT_TOKENS", 4000),
+            judge_provider=_env("COMPLIBOT_JUDGE_PROVIDER", "fake"),
+            judge_model=_env("COMPLIBOT_JUDGE_MODEL", "claude-sonnet-5-5"),
             internal_api_keys=keys,
         )
 
