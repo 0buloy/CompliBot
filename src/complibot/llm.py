@@ -1,6 +1,7 @@
 """Pluggable LLM providers behind one tiny interface.
 
-    provider.complete(system, user, json_schema=None) -> LLMResponse
+    provider.complete(system, user, json_schema=None) -> LLMResponse     (single call, JSON out)
+    provider.chat(system, messages, tools) -> ChatResponse               (tool calling, for the agent)
 
 - AnthropicProvider: Claude via the official `anthropic` SDK. Uses structured
   outputs (output_config.format = json_schema) so the reply is valid JSON, and
@@ -84,17 +85,92 @@ def parse_json_object(text: str) -> dict:
     return value
 
 
+# ------------------------------------------------------------------ tool calling
+#
+# Provider-neutral conversation format used by the agent:
+#   {"role": "user", "content": str}
+#   {"role": "assistant", "content": str, "tool_calls": [ToolCall...], "raw": <provider message>}
+#   {"role": "tool", "tool_call_id": str, "name": str, "content": str, "is_error": bool}
+# Each provider converts it to its own wire format. For Claude we send the assistant's
+# original content blocks back unchanged ("raw"), which keeps thinking blocks valid.
+
+
+@dataclass
+class ToolCall:
+    id: str
+    name: str
+    args: dict
+
+
+@dataclass
+class ChatResponse:
+    text: str
+    tool_calls: list[ToolCall]
+    raw: object  # provider-native assistant message, replayed verbatim on the next turn
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    latency_ms: float = 0.0
+    stop_reason: str = ""
+
+    @property
+    def cost_usd(self) -> float:
+        return estimate_cost(self.model, self.input_tokens, self.output_tokens)
+
+
+def _anthropic_messages(messages: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    results: list[dict] = []  # all tool results of one turn go back in ONE user message
+    for m in messages:
+        if m["role"] == "tool":
+            block = {"type": "tool_result", "tool_use_id": m["tool_call_id"], "content": m["content"]}
+            if m.get("is_error"):
+                block["is_error"] = True
+            results.append(block)
+            continue
+        if results:
+            out.append({"role": "user", "content": results})
+            results = []
+        if m["role"] == "assistant":
+            out.append({"role": "assistant", "content": m["raw"] if m.get("raw") is not None else m["content"]})
+        else:
+            out.append({"role": "user", "content": m["content"]})
+    if results:
+        out.append({"role": "user", "content": results})
+    return out
+
+
+def _openai_messages(system: str, messages: list[dict]) -> list[dict]:
+    out: list[dict] = [{"role": "system", "content": system}]
+    for m in messages:
+        if m["role"] == "tool":
+            out.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": m["content"]})
+        elif m["role"] == "assistant":
+            msg: dict = {"role": "assistant", "content": m.get("content") or None}
+            if m.get("tool_calls"):
+                msg["tool_calls"] = [{"id": c.id, "type": "function",
+                                      "function": {"name": c.name, "arguments": json.dumps(c.args)}}
+                                     for c in m["tool_calls"]]
+            out.append(msg)
+        else:
+            out.append({"role": "user", "content": m["content"]})
+    return out
+
+
 # --------------------------------------------------------------------- Anthropic
 
 
 class AnthropicProvider:
     name = "anthropic"
 
-    def __init__(self, model: str, effort: str = "medium", fallbacks: str = "default", max_tokens: int = 4000, client=None):
+    def __init__(self, model: str, effort: str = "medium", fallbacks: str = "default", max_tokens: int = 4000,
+                 client=None, timeout: float = 60.0, max_retries: int = 3):
         if client is None:
             import anthropic  # lazy: optional dependency
 
-            client = anthropic.Anthropic()
+            # The SDK retries 408/409/429/5xx and connection errors with exponential backoff.
+            # We deliberately don't add a second retry layer on top (retries would multiply).
+            client = anthropic.Anthropic(timeout=timeout, max_retries=max_retries)
         self.client = client
         self.model = model
         self.effort = effort
@@ -151,19 +227,59 @@ class AnthropicProvider:
         )
 
 
+    def chat(self, system: str, messages: list[dict], tools: list[dict]) -> ChatResponse:
+        import anthropic
+
+        req = {
+            "model": self.model, "max_tokens": self.max_tokens, "system": system,
+            "messages": _anthropic_messages(messages),
+            "tools": [{**t, "strict": True} for t in tools],
+            "tool_choice": {"type": "auto"},  # forced tool choice is rejected by current models
+        }
+        if self.effort:
+            req["output_config"] = {"effort": self.effort}
+        t0 = time.perf_counter()
+        try:
+            if self.fallbacks and self.fallbacks != "off":
+                resp = self.client.beta.messages.create(**req, betas=["server-side-fallback-2026-07-01"],
+                                                        fallbacks=self.fallbacks)
+            else:
+                resp = self.client.messages.create(**req)
+        except anthropic.RateLimitError as e:
+            raise LLMError(f"Anthropic rate limit: {e.message}", retryable=True) from e
+        except anthropic.APIStatusError as e:
+            raise LLMError(f"Anthropic API error {e.status_code}: {e.message}", retryable=e.status_code >= 500) from e
+        except anthropic.APIConnectionError as e:
+            raise LLMError("Could not reach the Anthropic API", retryable=True) from e
+        if resp.stop_reason == "refusal":
+            raise LLMError("Model declined the request (stop_reason=refusal)")
+        if resp.stop_reason == "max_tokens":
+            raise LLMError("Model output was truncated (max_tokens)")
+        calls = []
+        for b in resp.content:
+            if b.type == "tool_use":
+                args = b.input if isinstance(b.input, dict) else json.loads(b.input)
+                calls.append(ToolCall(id=b.id, name=b.name, args=args))
+        return ChatResponse(
+            text="".join(b.text for b in resp.content if b.type == "text"), tool_calls=calls, raw=resp.content,
+            model=resp.model or self.model, input_tokens=resp.usage.input_tokens, output_tokens=resp.usage.output_tokens,
+            latency_ms=(time.perf_counter() - t0) * 1000, stop_reason=resp.stop_reason or "",
+        )
+
+
 # ------------------------------------------------------------------------ OpenAI
 
 
 class OpenAIProvider:
     name = "openai"
 
-    def __init__(self, model: str, max_tokens: int = 4000, client=None):
+    def __init__(self, model: str, max_tokens: int = 4000, client=None, timeout: float = 60.0, max_retries: int = 3):
         if not model:
             raise ValueError("OPENAI_MODEL is not set")
         if client is None:
             from openai import OpenAI  # lazy: optional dependency
 
-            client = OpenAI()
+            client = OpenAI(timeout=timeout, max_retries=max_retries)
         self.client = client
         self.model = model
         self.max_tokens = max_tokens
@@ -204,6 +320,34 @@ class OpenAIProvider:
         )
 
 
+    def chat(self, system: str, messages: list[dict], tools: list[dict]) -> ChatResponse:
+        import openai
+
+        t0 = time.perf_counter()
+        try:
+            resp = self.client.chat.completions.create(
+                model=self.model, messages=_openai_messages(system, messages), max_completion_tokens=self.max_tokens,
+                tools=[{"type": "function", "function": {"name": t["name"], "description": t["description"],
+                                                         "parameters": t["input_schema"], "strict": True}}
+                       for t in tools],
+            )
+        except openai.RateLimitError as e:
+            raise LLMError("OpenAI rate limit", retryable=True) from e
+        except openai.APIStatusError as e:
+            raise LLMError(f"OpenAI API error {e.status_code}", retryable=e.status_code >= 500) from e
+        except openai.APIConnectionError as e:
+            raise LLMError("Could not reach the OpenAI API", retryable=True) from e
+        choice = resp.choices[0]
+        calls = [ToolCall(id=c.id, name=c.function.name, args=json.loads(c.function.arguments or "{}"))
+                 for c in (choice.message.tool_calls or [])]
+        usage = resp.usage
+        return ChatResponse(
+            text=choice.message.content or "", tool_calls=calls, raw=None, model=resp.model or self.model,
+            input_tokens=usage.prompt_tokens if usage else 0, output_tokens=usage.completion_tokens if usage else 0,
+            latency_ms=(time.perf_counter() - t0) * 1000, stop_reason=choice.finish_reason or "",
+        )
+
+
 # -------------------------------------------------------------------------- Fake
 
 SOURCE_RE = re.compile(r'<source id="(?P<id>[^"]+)"[^>]*>\n?(?P<text>.*?)\n?</source>', re.S)
@@ -239,8 +383,10 @@ class FakeProvider:
     name = "fake"
     model = "fake"
 
-    def __init__(self, responder: Callable[[str, str, dict | None], str] = fake_answer):
+    def __init__(self, responder: Callable[[str, str, dict | None], str] = fake_answer, chat_policy=None):
         self.responder = responder
+        # chat_policy(system, messages, tools) -> (text, [ToolCall]): a scripted planner for agent tests
+        self.chat_policy = chat_policy
         self.calls: list[tuple[str, str]] = []  # recorded for test assertions
 
     def complete(self, system: str, user: str, json_schema: dict | None = None) -> LLMResponse:
@@ -256,6 +402,17 @@ class FakeProvider:
         )
 
 
+    def chat(self, system: str, messages: list[dict], tools: list[dict]) -> ChatResponse:
+        if self.chat_policy is None:
+            raise LLMError("FakeProvider has no chat_policy for tool calling")
+        t0 = time.perf_counter()
+        text, calls = self.chat_policy(system, messages, tools)
+        self.calls.append((system, json.dumps(messages[-1], default=str)[:2000]))
+        return ChatResponse(text=text, tool_calls=calls, raw=None, model="fake", input_tokens=len(system) // 4,
+                            output_tokens=len(text) // 4, latency_ms=(time.perf_counter() - t0) * 1000,
+                            stop_reason="tool_use" if calls else "end_turn")
+
+
 def get_provider(settings: Settings, provider: str | None = None, model: str | None = None) -> LLMProvider:
     kind = (provider or settings.llm_provider).lower()
     if kind == "fake":
@@ -266,7 +423,10 @@ def get_provider(settings: Settings, provider: str | None = None, model: str | N
             effort=settings.anthropic_effort,
             fallbacks=settings.anthropic_fallbacks,
             max_tokens=settings.max_output_tokens,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
         )
     if kind == "openai":
-        return OpenAIProvider(model=model or settings.openai_model, max_tokens=settings.max_output_tokens)
+        return OpenAIProvider(model=model or settings.openai_model, max_tokens=settings.max_output_tokens,
+                              timeout=settings.llm_timeout_s, max_retries=settings.llm_max_retries)
     raise ValueError(f"Unknown LLM provider {kind!r} (use fake | anthropic | openai)")

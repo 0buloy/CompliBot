@@ -5,8 +5,7 @@ documents (MAS Technology Risk Management Guidelines, PDPC PDPA advisory guideli
 Governance Framework), with clause-level citations on every answer and an "I don't know" when the
 documents don't support one.
 
-> Status: Phase 1 (core RAG) and Phase 2 (evaluation) are done. Experiments, agent + guardrails, and
-> deployment come next.
+> Status: Phases 1-4 are done (core RAG, evaluation, experiments, agent and guardrails). Deployment is next.
 
 ## What it does
 
@@ -67,6 +66,48 @@ curl -s localhost:8000/ask -H 'Content-Type: application/json' \
 
 Interactive docs: `http://localhost:8000/docs`.
 
+## Agent
+
+`POST /agent` (or `complibot agent "..."`) runs a tool-calling agent built as a LangGraph state graph
+(`agent -> tools -> agent ... -> end`), with a plain-loop fallback that uses the same node functions:
+
+| Tool | What it does |
+|---|---|
+| `list_documents` | documents the caller's role may see |
+| `search_clauses(query, doc_ids, top_k)` | role-filtered hybrid search, optionally within documents |
+| `compare_regulations(topic, doc_a, doc_b)` | top clauses on one topic from each of two documents |
+| `generate_checklist(topic, doc_ids)` | structured JSON checklist; items that don't cite a retrieved clause are dropped |
+
+```bash
+complibot agent "Give me a checklist for AI incident reporting and customer data" --role internal
+```
+
+The role is bound server-side when the toolbox is created. The model never passes it and can't widen
+its access: an internal doc_id gives a public caller the same "unknown document" error as a document
+that doesn't exist. Tool errors go back to the model as `is_error` results, and a step limit bounds
+cost.
+
+## Guardrails and reliability
+
+- **PII redaction before the LLM** (`guardrails.py`): Presidio AnalyzerEngine plus custom Singapore
+  recognizers. NRIC/FIN is checked with the check-letter checksum, and +65 phone numbers, emails
+  and cards are covered too. Placeholders are consistent (`<NRIC_1>` every time the same NRIC
+  appears). If Presidio or its spaCy model is missing, it falls back to regex rather than turning
+  off. Answers are redacted on the way out too.
+- **Prompt-injection screen**: blocks "ignore previous instructions" / "reveal system prompt" style
+  inputs before any LLM call (status `blocked`).
+- **Access control**: role from `X-API-Key` (constant-time comparison), filter applied before
+  ranking, the same filter inside every agent tool.
+- **Failure handling**: SDK retries with exponential backoff plus timeouts (no double retry layer).
+  If the LLM is down, `/ask` returns status `error` with the top 3 relevant clauses rather than a
+  500. Malformed model JSON → `error`. Unhandled exceptions → a clean 500 with an `X-Request-ID`
+  and no stack trace.
+- **Audit log** (`COMPLIBOT_AUDIT_LOG`): JSONL of role, status, documents touched, citations and PII
+  counts. It never contains question or answer text.
+- **Tracing** (`tracing.py`): set `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` to get one trace per request
+  (input guardrail, retrieval, LLM generations with token usage and cost, each agent tool call). Only
+  redacted text is traced, and the PII redactor is also installed as Langfuse's `mask`.
+
 ## Evaluation
 
 `complibot eval` scores the golden set on recall@k, MRR, refusal accuracy, unsafe answer rate,
@@ -119,7 +160,13 @@ src/complibot/
   judge.py       LLM-as-judge: faithfulness (per-claim) and correctness, offline heuristic judge
   evaluation.py  golden set, per-case scoring, summary with 95% CIs, oracle/null baselines
   labeling.py    candidate generation + interactive labelling for the golden set
-  cli.py         ingest | inspect | search | ask | serve | eval | eval-generate | eval-label | eval-calibrate
+  rewrite.py     query rewriting (rules glossary | LLM), multi-query RRF
+  rerank.py      rerankers (lexical | cross-encoder | LLM)
+  experiments.py A/B runner with paired deltas and README table
+  agent.py       LangGraph tool-calling agent: search, compare, checklist JSON
+  guardrails.py  Presidio PII redaction (SG NRIC/phone), injection screen
+  tracing.py     optional Langfuse tracing with PII masking
+  cli.py         ingest | inspect | search | ask | agent | serve | eval | experiment | eval-*
 tests/           pytest; fixture documents are clearly marked FAKE
 eval/            golden sets, judge calibration set, results
 data/raw/        public/ and internal/ (folder = access level)

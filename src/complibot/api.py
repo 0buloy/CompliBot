@@ -2,6 +2,7 @@
 
     GET  /health   -> liveness + index stats
     POST /ask      -> AnswerResult (answer, citations, status, usage, latency)
+    POST /agent    -> AgentResult (tool-calling agent: search, compare, checklist JSON)
     POST /search   -> retrieved clauses only (no LLM call; handy for debugging)
 
 The caller's role is derived server-side from the X-API-Key header, never from
@@ -13,11 +14,14 @@ from __future__ import annotations
 
 import hmac
 import logging
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from .agent import Agent, AgentResult
 from .answer import CompliBot
 from .config import Settings
 from .schemas import AnswerResult
@@ -68,6 +72,21 @@ def create_app(bot: CompliBot | None = None, settings: Settings | None = None) -
     app = FastAPI(title="CompliBot", version="0.1.0", lifespan=lifespan,
                   description="Cited answers over Singapore regulatory documents.")
 
+    @app.middleware("http")
+    async def request_id(request: Request, call_next):
+        rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:16]
+        request.state.request_id = rid
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
+        return response
+
+    @app.exception_handler(Exception)
+    async def unhandled(request: Request, exc: Exception):
+        # Log the details server-side; never send stack traces (or input text) to the client.
+        rid = getattr(request.state, "request_id", "-")
+        log.exception("unhandled error request_id=%s", rid)
+        return JSONResponse(status_code=500, content={"detail": "Internal error", "request_id": rid})
+
     def get_bot(request: Request) -> CompliBot:
         if request.app.state.bot is None:
             raise HTTPException(status_code=503, detail=f"Index not loaded: {request.app.state.load_error}")
@@ -92,9 +111,17 @@ def create_app(bot: CompliBot | None = None, settings: Settings | None = None) -
         log.info("ask role=%s status=%s latency_ms=%.0f", role, result.status, result.latency_ms)
         return result
 
+    @app.post("/agent", response_model=AgentResult)
+    def agent(body: AskRequest, bot: CompliBot = Depends(get_bot), role: str = Depends(get_role)) -> AgentResult:
+        result = Agent.from_bot(bot).run(body.question, role=role)
+        log.info("agent role=%s status=%s steps=%d latency_ms=%.0f", role, result.status, len(result.steps),
+                 result.latency_ms)
+        return result
+
     @app.post("/search", response_model=list[SearchHit])
     def search(body: AskRequest, bot: CompliBot = Depends(get_bot), role: str = Depends(get_role)) -> list[SearchHit]:
-        hits = bot.retriever.search(body.question, role=role, top_k=body.top_k)
+        check = bot.guardrails.check_input(body.question)  # redact before searching/logging
+        hits = bot.retriever.search(check.text, role=role, top_k=body.top_k)
         return [
             SearchHit(chunk_id=h.chunk.chunk_id, doc_title=h.chunk.doc_title, section_id=h.chunk.section_id,
                       section_title=h.chunk.section_title, page_start=h.chunk.page_start,

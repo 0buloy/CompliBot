@@ -73,6 +73,16 @@ class Settings:
     judge_provider: str = "fake"  # "fake" | "anthropic" | "openai"
     judge_model: str = "claude-sonnet-5-5"
 
+    # Guardrails & reliability
+    pii_engine: str = "auto"  # "auto" (Presidio if available, else regex) | "presidio" | "regex" | "off"
+    pii_person: bool = False  # also redact PERSON names (spaCy NER; more false positives)
+    spacy_model: str = "en_core_web_sm"
+    block_injection: bool = True
+    llm_timeout_s: float = 60.0
+    llm_max_retries: int = 3  # SDK-level retries with exponential backoff (429/5xx/connection)
+    agent_max_steps: int = 6
+    audit_log: str = ""  # path to a JSONL audit log; empty = off
+
     # API access control
     internal_api_keys: frozenset[str] = field(default_factory=frozenset)
 
@@ -97,6 +107,14 @@ class Settings:
             max_output_tokens=_env_int("COMPLIBOT_MAX_OUTPUT_TOKENS", 4000),
             judge_provider=_env("COMPLIBOT_JUDGE_PROVIDER", "fake"),
             judge_model=_env("COMPLIBOT_JUDGE_MODEL", "claude-sonnet-5-5"),
+            pii_engine=_env("COMPLIBOT_PII_ENGINE", "auto"),
+            pii_person=_env("COMPLIBOT_PII_PERSON", "false").lower() in ("1", "true", "yes"),
+            spacy_model=_env("COMPLIBOT_SPACY_MODEL", "en_core_web_sm"),
+            block_injection=_env("COMPLIBOT_BLOCK_INJECTION", "true").lower() in ("1", "true", "yes"),
+            llm_timeout_s=float(_env("COMPLIBOT_LLM_TIMEOUT", "60")),
+            llm_max_retries=_env_int("COMPLIBOT_LLM_MAX_RETRIES", 3),
+            agent_max_steps=_env_int("COMPLIBOT_AGENT_MAX_STEPS", 6),
+            audit_log=_env("COMPLIBOT_AUDIT_LOG", ""),
             internal_api_keys=keys,
         )
 

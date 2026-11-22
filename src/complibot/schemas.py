@@ -67,7 +67,7 @@ class Usage(BaseModel):
     llm_latency_ms: float = 0.0
 
 
-AnswerStatus = Literal["answered", "refused", "unsupported", "error"]
+AnswerStatus = Literal["answered", "refused", "unsupported", "blocked", "error"]
 
 
 class AnswerResult(BaseModel):
@@ -83,3 +83,5 @@ class AnswerResult(BaseModel):
     latency_ms: float = 0.0
     usage: Usage = Usage()
     error: str | None = None
+    pii_redacted: dict[str, int] = Field(default={}, description="Counts of PII entities redacted from the input")
+    related_clauses: list[Citation] = Field(default=[], description="Top clauses, returned when the LLM is down")

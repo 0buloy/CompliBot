@@ -92,6 +92,17 @@ class HybridRetriever:
             raise ValueError(f"Index embeddings were built with {built_with!r}, but query embedder is {embedder.name!r}.")
         self.bm25 = LuceneBM25([tokenize(index_text(c)) for c in self.chunks]) if self.chunks else None
         self._levels = np.array([c.access_level for c in self.chunks])
+        self._doc_ids = np.array([c.doc_id for c in self.chunks])
+
+    def visible_documents(self, role: str) -> dict[str, dict]:
+        """doc_id -> {title, access_level, chunks} for documents this role may see."""
+        allowed = allowed_levels(role)
+        docs: dict[str, dict] = {}
+        for c in self.chunks:
+            if c.access_level in allowed:
+                d = docs.setdefault(c.doc_id, {"title": c.doc_title, "access_level": c.access_level, "chunks": 0})
+                d["chunks"] += 1
+        return docs
 
     # ---- individual retrievers -------------------------------------------------
 
@@ -118,11 +129,15 @@ class HybridRetriever:
 
     # ---- public API ------------------------------------------------------------
 
-    def search(self, query: str, role: str = "public", top_k: int | None = None) -> list[Retrieved]:
+    def search(self, query: str, role: str = "public", top_k: int | None = None,
+               doc_ids: set[str] | None = None) -> list[Retrieved]:
+        """Top-k chunks for `query` that `role` may see (optionally only from `doc_ids`)."""
         top_k = top_k or self.settings.top_k
         if not self.chunks or not query.strip():
             return []
         mask = self._allowed_mask(role)
+        if doc_ids:
+            mask &= np.isin(self._doc_ids, list(doc_ids))
         pool = max(self.settings.candidate_pool, top_k)
         queries = [query] + (self.rewriter.rewrite(query) if self.rewriter else [])
         rankings: list[list[int]] = []

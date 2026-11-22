@@ -4,6 +4,7 @@
     complibot inspect data/raw/internal/mas-trm-guidelines-2021.pdf   # check clause detection
     complibot search "What is the RTO for critical systems?" --role internal
     complibot ask "..." [--role public|internal] [--provider fake|anthropic|openai] [--json]
+    complibot agent "Make a checklist for AI incident reporting" --role internal
     complibot serve [--port 8000]
     complibot eval [--golden eval/golden/acme_demo.jsonl] [--system rag|oracle|null] [--reps 2]
     complibot eval-generate --per-doc 15 --out eval/golden/candidates.jsonl
@@ -95,6 +96,27 @@ def cmd_ask(args) -> int:
         print(f"  - {c.doc_title}, s.{c.section_id} {c.section_title} (p.{c.page_start})")
     print(f"\n[status={result.status} role={result.role} latency={result.latency_ms:.0f}ms "
           f"tokens={result.usage.input_tokens}/{result.usage.output_tokens} cost=${result.usage.cost_usd:.5f}]")
+    return 0
+
+
+def cmd_agent(args) -> int:
+    from .agent import Agent
+    from .answer import CompliBot
+
+    bot = CompliBot.from_settings(_settings(args))
+    result = Agent.from_bot(bot).run(args.question, role=args.role)
+    if args.json:
+        print(result.model_dump_json(indent=2))
+        return 0
+    for i, step in enumerate(result.steps, start=1):
+        print(f"  step {i}: {step.tool}({json.dumps(step.args)[:80]}) -> {'ok' if step.ok else 'ERROR'}: {step.summary[:90]}")
+    print(f"\n{result.answer}\n")
+    if result.checklist:
+        print(json.dumps(result.checklist, indent=2))
+    for c in result.citations:
+        print(f"  - {c.doc_title}, s.{c.section_id} {c.section_title} (p.{c.page_start})")
+    print(f"\n[status={result.status} runner={result.runner} role={result.role} pii={result.pii_redacted} "
+          f"latency={result.latency_ms:.0f}ms cost=${result.usage.cost_usd:.5f}]")
     return 0
 
 
@@ -234,7 +256,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--limit", type=int, default=60)
     sp.set_defaults(func=cmd_inspect)
 
-    for name, func in (("search", cmd_search), ("ask", cmd_ask)):
+    for name, func in (("search", cmd_search), ("ask", cmd_ask), ("agent", cmd_agent)):
         sp = sub.add_parser(name, help=f"{name} the index")
         sp.add_argument("question")
         sp.add_argument("--role", default="public", choices=["public", "internal"])
@@ -243,8 +265,8 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--provider", choices=["fake", "anthropic", "openai"])
         sp.add_argument("--rewriter", choices=["none", "rules", "llm"])
         sp.add_argument("--reranker", choices=["none", "lexical", "cross-encoder", "llm"])
-        if name == "ask":
-            sp.add_argument("--json", action="store_true", help="Print the full AnswerResult as JSON")
+        if name in ("ask", "agent"):
+            sp.add_argument("--json", action="store_true", help="Print the full result as JSON")
         sp.set_defaults(func=func)
 
     sp = sub.add_parser("eval", help="Run the golden-set evaluation and print a results table")

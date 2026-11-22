@@ -8,14 +8,18 @@ instead of being presented as grounded.
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from html import escape
+from pathlib import Path
 
 from .config import Settings
+from .guardrails import Guardrails
 from .llm import LLMError, LLMProvider, parse_json_object
 from .retrieve import HybridRetriever
 from .schemas import AnswerResult, Citation, Retrieved, Usage
+from .tracing import Tracer
 
 IDK = "I don't know based on the provided documents."
 
@@ -117,12 +121,16 @@ def answer_question(
     role: str = "public",
     top_k: int | None = None,
     retrieved: list[Retrieved] | None = None,
+    tracer: Tracer | None = None,
 ) -> AnswerResult:
-    """Answer one question. Pass `retrieved` to reuse a search already done (the evaluator does)."""
+    """Answer one (already redacted) question. Pass `retrieved` to reuse a search (the evaluator does)."""
+    tracer = tracer or Tracer(None)
     t0 = time.perf_counter()
     question = question.strip()
     if retrieved is None:
-        retrieved = retriever.search(question, role=role, top_k=top_k)
+        with tracer.observe("retrieve", as_type="retriever", input={"query": question, "role": role}) as obs:
+            retrieved = retriever.search(question, role=role, top_k=top_k)
+            obs.update(output=[r.chunk.chunk_id for r in retrieved])
     ids = [r.chunk.chunk_id for r in retrieved]
 
     def done(**kw) -> AnswerResult:
@@ -135,11 +143,22 @@ def answer_question(
         return done(answer=IDK, status="refused", refused=True, supported=True)
 
     sources_block, labels = format_sources(retrieved)
-    try:
-        resp = llm.complete(SYSTEM_PROMPT, build_user_prompt(question, sources_block), json_schema=ANSWER_SCHEMA)
-    except LLMError as e:
-        return done(answer="The language model is unavailable right now; please try again.", status="error",
-                    refused=False, supported=False, error=str(e))
+    user_prompt = build_user_prompt(question, sources_block)
+    with tracer.observe("answer-llm", as_type="generation", model=getattr(llm, "model", ""),
+                        input={"system": SYSTEM_PROMPT, "user": user_prompt}) as gen:
+        try:
+            resp = llm.complete(SYSTEM_PROMPT, user_prompt, json_schema=ANSWER_SCHEMA)
+        except LLMError as e:
+            gen.update(level="ERROR", status_message=str(e))
+            # Graceful degradation: still useful without the LLM. Point the user at the top
+            # clauses, clearly labelled as search results rather than an answer.
+            related = [_to_citation(r) for r in retrieved[:3]]
+            refs = "; ".join(f"{c.doc_title} s.{c.section_id}" for c in related)
+            return done(answer=f"The language model is unavailable right now. The most relevant clauses are: {refs}.",
+                        status="error", refused=False, supported=False, error=str(e), related_clauses=related)
+        gen.update(output=resp.text, model=resp.model,
+                   usage_details={"input": resp.input_tokens, "output": resp.output_tokens},
+                   cost_details={"total": resp.cost_usd})
     usage = Usage(input_tokens=resp.input_tokens, output_tokens=resp.output_tokens, cost_usd=resp.cost_usd,
                   model=resp.model, llm_latency_ms=resp.latency_ms)
 
@@ -170,22 +189,43 @@ def answer_question(
     )
 
 
-class CompliBot:
-    """Facade used by the CLI and API: loads the index once, answers many questions."""
+BLOCKED_MESSAGE = ("This request looks like an attempt to change the assistant's instructions, so it was not "
+                   "processed. Please ask a compliance question.")
 
-    def __init__(self, settings: Settings, retriever: HybridRetriever, llm: LLMProvider):
+
+def write_audit(path: str, record: dict) -> None:
+    """Append one JSON line. Records hold ids, counts and statuses only, never question text."""
+    if not path:
+        return
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), **record}) + "\n")
+
+
+class CompliBot:
+    """Facade used by the CLI and API: loads the index once, answers many questions.
+
+    ask() = guardrails (PII redaction, injection screen) -> retrieve (role-filtered)
+            -> LLM -> citation check -> output redaction -> audit log, all traced.
+    """
+
+    def __init__(self, settings: Settings, retriever: HybridRetriever, llm: LLMProvider,
+                 guardrails: Guardrails | None = None, tracer: Tracer | None = None):
         self.settings = settings
         self.retriever = retriever
         self.llm = llm
+        self.guardrails = guardrails or Guardrails(redactor=None, block_injection=settings.block_injection)
+        self.tracer = tracer or Tracer(None)
 
     @classmethod
     def from_settings(cls, settings: Settings, llm: LLMProvider | None = None) -> "CompliBot":
         from .embeddings import get_embedder
         from .llm import get_provider
-        from .store import load_index
-
         from .rerank import get_reranker
         from .rewrite import get_rewriter
+        from .store import load_index
+        from .tracing import get_tracer
 
         llm = llm or get_provider(settings)
         index = load_index(settings.index_dir)
@@ -194,7 +234,30 @@ class CompliBot:
             rewriter=get_rewriter(settings.rewriter, llm),
             reranker=get_reranker(settings.reranker, llm, settings.rerank_model),
         )
-        return cls(settings, retriever, llm)
+        guardrails = Guardrails.from_settings(settings)
+        return cls(settings, retriever, llm, guardrails, get_tracer(guardrails.redactor))
 
     def ask(self, question: str, role: str = "public", top_k: int | None = None) -> AnswerResult:
-        return answer_question(question, self.retriever, self.llm, role=role, top_k=top_k)
+        with self.tracer.observe("ask", as_type="chain", metadata={"role": role}) as root:
+            with self.tracer.observe("input-guardrail", as_type="guardrail") as g:
+                check = self.guardrails.check_input(question)
+                g.update(output={"pii": check.pii, "blocked": check.blocked})
+            # From here on only the redacted text exists: it is what we trace, prompt and log.
+            root.update(input={"question": check.text})
+            if check.blocked:
+                result = AnswerResult(question=check.text, answer=BLOCKED_MESSAGE, status="blocked", refused=True,
+                                      supported=True, role=role, pii_redacted=check.pii, error=check.blocked)
+            else:
+                result = answer_question(check.text, self.retriever, self.llm, role=role, top_k=top_k,
+                                         tracer=self.tracer)
+                result.answer = self.guardrails.redact_output(result.answer)
+                result.pii_redacted = check.pii
+            root.update(output={"status": result.status, "answer": result.answer,
+                                "citations": [c.chunk_id for c in result.citations]})
+        write_audit(self.settings.audit_log, {
+            "event": "ask", "role": role, "status": result.status, "pii": result.pii_redacted,
+            "docs": sorted({i.split("::")[0] for i in result.retrieved_ids}),
+            "citations": [c.chunk_id for c in result.citations], "latency_ms": round(result.latency_ms, 1),
+            "model": result.usage.model, "cost_usd": result.usage.cost_usd,
+        })
+        return result

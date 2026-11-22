@@ -80,3 +80,47 @@ def test_get_provider():
         get_provider(Settings(llm_provider="nope"))
     with pytest.raises(ValueError, match="OPENAI_MODEL"):
         get_provider(Settings(llm_provider="openai", openai_model=""))
+
+
+def test_anthropic_tool_messages_replay_raw_blocks_and_batch_results():
+    from complibot.llm import ToolCall, _anthropic_messages
+
+    raw = [SimpleNamespace(type="thinking"), SimpleNamespace(type="tool_use", id="t1")]
+    msgs = [
+        {"role": "user", "content": "q"},
+        {"role": "assistant", "content": "", "tool_calls": [ToolCall("t1", "a", {}), ToolCall("t2", "b", {})],
+         "raw": raw},
+        {"role": "tool", "tool_call_id": "t1", "name": "a", "content": "{}"},
+        {"role": "tool", "tool_call_id": "t2", "name": "b", "content": "{\"error\": 1}", "is_error": True},
+    ]
+    out = _anthropic_messages(msgs)
+    assert out[1]["content"] is raw  # thinking blocks sent back unchanged
+    assert len(out) == 3 and [b["tool_use_id"] for b in out[2]["content"]] == ["t1", "t2"]
+    assert out[2]["content"][1]["is_error"] is True
+
+
+def test_anthropic_chat_parses_tool_use():
+    tool_resp = SimpleNamespace(
+        stop_reason="tool_use", model="claude-opus-5-5",
+        content=[SimpleNamespace(type="text", text="Let me search."),
+                 SimpleNamespace(type="tool_use", id="tu_1", name="search_clauses",
+                                 input={"query": "rto", "doc_ids": [], "top_k": 3})],
+        usage=SimpleNamespace(input_tokens=500, output_tokens=40))
+    client, beta, _ = make_client(tool_resp)
+    p = AnthropicProvider("claude-opus-5-5", client=client)
+    out = p.chat("sys", [{"role": "user", "content": "q"}],
+                 [{"name": "search_clauses", "description": "d", "input_schema": {"type": "object"}}])
+    assert out.tool_calls[0].name == "search_clauses" and out.tool_calls[0].args["query"] == "rto"
+    assert beta.kwargs["tool_choice"] == {"type": "auto"} and beta.kwargs["tools"][0]["strict"] is True
+
+
+def test_openai_tool_message_conversion():
+    from complibot.llm import ToolCall, _openai_messages
+
+    out = _openai_messages("sys", [
+        {"role": "user", "content": "q"},
+        {"role": "assistant", "content": "", "tool_calls": [ToolCall("c1", "list_documents", {})]},
+        {"role": "tool", "tool_call_id": "c1", "name": "list_documents", "content": "{}"},
+    ])
+    assert out[0]["role"] == "system" and out[2]["tool_calls"][0]["function"]["name"] == "list_documents"
+    assert out[3] == {"role": "tool", "tool_call_id": "c1", "content": "{}"}
